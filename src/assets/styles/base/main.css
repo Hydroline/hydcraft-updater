@@ -1,0 +1,220 @@
+:root {
+	--font-sans:
+		'Rubik', 'Rubik Local', -apple-system, BlinkMacSystemFont, 'Segoe UI',
+		'Roboto', 'MiSans VF', 'Misans TC VF', 'MiSans L3', 'Noto Sans SC',
+		'Noto Sans TC', 'Noto Sans JP', 'Noto Sans KR', sans-serif;
+	--font-sans-ja:
+		'Rubik', 'Rubik Local', -apple-system, BlinkMacSystemFont, 'Segoe UI',
+		'Roboto', 'Noto Sans JP', 'Noto Sans TC', 'Noto Sans SC', 'Noto Sans KR',
+		'MiSans VF', 'Misans TC VF', 'MiSans L3', sans-serif;
+
+	--font-serif:
+		'Literata', 'Literata Local', 'Noto Serif SC', 'Noto Serif TC',
+		'Noto Serif JP', 'Noto Serif KR', serif;
+	--font-serif-ja:
+		'Literata', 'Literata Local', 'Noto Serif JP', 'Noto Serif TC',
+		'Noto Serif SC', 'Noto Serif KR', serif;
+	--font-serif-tc:
+		'Literata', 'Literata Local', 'Noto Serif TC', 'Noto Serif SC',
+		'Noto Serif JP', 'Noto Serif KR', serif;
+
+	--font-mono:
+		'JetBrains Mono', 'MiSans VF', 'Misans TC VF', 'MiSans L3', 'Noto Sans SC',
+		'Noto Sans TC', 'Noto Sans JP', 'Noto Sans KR', monospace;
+
+	--font-family: var(--font-sans);
+	--site-shell-max-width: 80rem;
+
+	line-height: 1.75;
+	font-family: var(--font-sans);
+	-webkit-font-smoothing: antialiased;
+	-moz-osx-font-smoothing: grayscale;
+	text-rendering: optimizeLegibility;
+	font-synthesis: none;
+	color-scheme: light;
+}
+
+.site-shell {
+	max-width: var(--site-shell-max-width);
+}
+
+html[lang='ja-JP'],
+html:lang(ja-JP) {
+	--font-sans: var(--font-sans-ja);
+	--font-serif: var(--font-serif-ja);
+}
+
+html[lang='zh-TW'],
+html:lang(zh-TW) {
+	--font-serif: var(--font-serif-tc);
+}
+
+html {
+	scroll-behavior: smooth;
+	background-color: var(--color-surface-0);
+}
+
+body {
+	margin: 0;
+	padding: 0;
+	background-color: inherit;
+}
+
+*,
+*::before,
+*::after {
+	scrollbar-color: var(--color-surface-3) transparent;
+	scrollbar-width: thin;
+	box-sizing: border-box;
+}
+
+*::-webkit-scrollbar {
+	width: 8px;
+	height: 8px;
+}
+
+*::-webkit-scrollbar-track {
+	background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+	background-color: var(--color-surface-3);
+	border-radius: 8px;
+	background-clip: content-box;
+	border: 2px solid transparent;
+}
+
+*::-webkit-scrollbar-corner {
+	background: transparent;
+}
+
+::selection {
+	background: color-mix(
+		in srgb,
+		var(--ui-color-primary-500) 72%,
+		var(--color-surface-0) 28%
+	);
+	color: var(--ui-primary-foreground);
+}
+
+::-moz-selection {
+	background: rgb(43 156 214);
+	color: var(--ui-primary-foreground);
+}
+
+.dark ::selection {
+	background: color-mix(
+		in srgb,
+		var(--ui-color-primary-400) 58%,
+		var(--color-surface-950) 42%
+	);
+	color: var(--color-text--emphasized);
+}
+
+.dark ::-moz-selection {
+	background: rgb(68 138 186);
+	color: var(--color-text--emphasized);
+}
+
+.dark {
+	color-scheme: dark;
+}
+
+.page-enter-active,
+.page-leave-active {
+	transition:
+		opacity 220ms ease,
+		transform 220ms ease;
+}
+
+.page-enter-from,
+.page-leave-to {
+	opacity: 0;
+	transform: translateY(6px);
+}
+
+.page-enter-to,
+.page-leave-from {
+	opacity: 1;
+	transform: translateY(0);
+}
+
+.home-hero-video-enter-active,
+.home-hero-video-leave-active {
+	transition:
+		opacity 220ms ease,
+		transform 220ms ease;
+}
+
+.home-hero-video-enter-from,
+.home-hero-video-leave-to {
+	opacity: 0;
+	transform: translateY(6px);
+}
+
+.home-hero-video-enter-to,
+.home-hero-video-leave-from {
+	opacity: 1;
+	transform: translateY(0);
+}
+
+.markdown-locale-enter-active,
+.markdown-locale-leave-active {
+	transition:
+		opacity 180ms ease,
+		filter 180ms ease,
+		transform 180ms ease;
+}
+
+.markdown-locale-enter-from,
+.markdown-locale-leave-to {
+	opacity: 0;
+	filter: blur(2px);
+	transform: translateY(4px);
+}
+
+.markdown-locale-enter-to,
+.markdown-locale-leave-from {
+	opacity: 1;
+	filter: blur(0);
+	transform: translateY(0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.page-enter-active,
+	.page-leave-active {
+		transition: none;
+	}
+
+	.page-enter-from,
+	.page-leave-to,
+	.page-enter-to,
+	.page-leave-from {
+		transform: none;
+	}
+
+	.home-hero-video-enter-active,
+	.home-hero-video-leave-active {
+		transition: none;
+	}
+
+	.home-hero-video-enter-from,
+	.home-hero-video-leave-to,
+	.home-hero-video-enter-to,
+	.home-hero-video-leave-from {
+		transform: none;
+	}
+
+	.markdown-locale-enter-active,
+	.markdown-locale-leave-active {
+		transition: none;
+	}
+
+	.markdown-locale-enter-from,
+	.markdown-locale-leave-to,
+	.markdown-locale-enter-to,
+	.markdown-locale-leave-from {
+		filter: none;
+		transform: none;
+	}
+}
