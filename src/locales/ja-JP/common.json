@@ -1,0 +1,22 @@
+{
+	"appName": "HydCraft",
+	"updater": "クライアントアップデーター",
+	"login": "ログイン",
+	"logout": "ログアウト",
+	"profile": "プロフィール",
+	"accountMenu": "アカウントメニューを開く",
+	"language": "言語",
+	"languageZhCN": "简体中文",
+	"languageZhTW": "繁體中文",
+	"languageJaJP": "日本語",
+	"languageEnUS": "English",
+	"theme": "テーマ",
+	"themeLight": "ライト",
+	"themeDark": "ダーク",
+	"themeSystem": "システム",
+	"close": "ウィンドウを閉じる",
+	"minimize": "ウィンドウを最小化",
+	"confirm": "確認",
+	"cancel": "キャンセル",
+	"dialogTitle": "HydCraft アップデーター"
+}

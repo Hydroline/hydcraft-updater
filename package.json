@@ -1,28 +1,32 @@
 {
-  "name": "hydcraft-updater",
-  "private": true,
-  "type": "module",
-  "packageManager": "pnpm@10.14.0",
-  "scripts": {
-    "dev": "vite",
-    "build": "vue-tsc --noEmit && vite build",
-    "tauri": "tauri",
-    "publish": "node scripts/publish-updater.mjs"
-  },
-  "dependencies": {
-    "@nuxt/ui": "^4.9.0",
-    "@tailwindcss/vite": "^4.3.2",
-    "@tauri-apps/api": "^2.8.0",
-    "@tauri-apps/plugin-opener": "^2.5.4",
-    "tailwindcss": "^4.3.2",
-    "vue": "^3.5.18",
-    "vue-router": "^5.1.0"
-  },
-  "devDependencies": {
-    "@tauri-apps/cli": "^2.8.0",
-    "@vitejs/plugin-vue": "^6.0.1",
-    "typescript": "^5.8.3",
-    "vite": "^7.1.3",
-    "vue-tsc": "^2.2.12"
-  }
+	"name": "hydcraft-updater",
+	"private": true,
+	"type": "module",
+	"packageManager": "pnpm@10.14.0",
+	"scripts": {
+		"dev": "vite",
+		"build": "vue-tsc --noEmit && vite build",
+		"format": "prettier --write .",
+		"tauri": "tauri",
+		"publish": "node scripts/publish-updater.mjs"
+	},
+	"dependencies": {
+		"@iconify/vue": "^5.0.1",
+		"@nuxt/ui": "^4.9.0",
+		"@tailwindcss/vite": "^4.3.2",
+		"@tauri-apps/api": "^2.8.0",
+		"@tauri-apps/plugin-dialog": "^2.4.0",
+		"@tauri-apps/plugin-opener": "^2.5.4",
+		"tailwindcss": "^4.3.2",
+		"vue": "^3.5.18",
+		"vue-router": "^5.1.0"
+	},
+	"devDependencies": {
+		"@tauri-apps/cli": "^2.8.0",
+		"@vitejs/plugin-vue": "^6.0.1",
+		"prettier": "3.8.1",
+		"typescript": "^5.8.3",
+		"vite": "^7.1.3",
+		"vue-tsc": "^2.2.12"
+	}
 }

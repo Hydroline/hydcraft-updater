@@ -1,0 +1,8 @@
+{
+	"versionTitle": "Select the current client version",
+	"versionDescription": "Select an installed HydCraft version to continue checking for updates.",
+	"versionLatest": "Latest",
+	"versionLatestSuffix": " ({latest})",
+	"versionNext": "Next",
+	"noVersion": "No version available"
+}

@@ -1,0 +1,8 @@
+{
+	"versionTitle": "選擇目前客戶端版本",
+	"versionDescription": "請選擇本地已安裝的 HydCraft 版本，以便繼續檢查更新。",
+	"versionLatest": "最新",
+	"versionLatestSuffix": "（{latest}）",
+	"versionNext": "下一步",
+	"noVersion": "暫無版本"
+}

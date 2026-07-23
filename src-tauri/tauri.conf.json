@@ -1,9 +1,54 @@
 {
-  "$schema": "https://schema.tauri.app/config/2",
-  "productName": "HydCraft Updater",
-  "version": "0.1.0",
-  "identifier": "top.aurlemon.hydcraft.updater",
-  "build": { "frontendDist": "../dist", "devUrl": "http://localhost:1420", "beforeBuildCommand": "pnpm build", "beforeDevCommand": "pnpm dev" },
-  "app": { "windows": [{ "title": "HydCraft Updater", "width": 900, "height": 580, "resizable": false }], "security": { "csp": null } },
-  "bundle": { "active": true, "targets": "all", "icon": [] }
+	"$schema": "https://schema.tauri.app/config/2",
+	"productName": "HydCraft Updater",
+	"version": "0.1.0",
+	"identifier": "top.aurlemon.hydcraft.updater",
+	"build": {
+		"frontendDist": "../dist",
+		"devUrl": "http://127.0.0.1:5173",
+		"beforeBuildCommand": "pnpm build",
+		"beforeDevCommand": "pnpm dev"
+	},
+	"app": {
+		"windows": [
+			{
+				"label": "main",
+				"title": "HydCraft Updater",
+				"width": 900,
+				"height": 580,
+				"center": true,
+				"resizable": false,
+				"decorations": false
+			},
+			{
+				"label": "auth",
+				"url": "index.html",
+				"title": "HydCraft 账户验证",
+				"width": 420,
+				"height": 500,
+				"center": true,
+				"resizable": false,
+				"decorations": false,
+				"visible": false
+			},
+			{
+				"label": "version",
+				"url": "index.html",
+				"title": "HydCraft 选择客户端版本",
+				"width": 420,
+				"height": 500,
+				"center": true,
+				"resizable": false,
+				"decorations": false,
+				"visible": false
+			}
+		],
+		"security": { "csp": null }
+	},
+	"plugins": {
+		"deep-link": {
+			"desktop": { "schemes": ["hydcraft-updater"] }
+		}
+	},
+	"bundle": { "active": true, "targets": "all", "icon": [] }
 }

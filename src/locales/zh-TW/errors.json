@@ -1,0 +1,11 @@
+{
+	"readSourcesFailed": "無法讀取下載源：{error}",
+	"openVersionFailed": "無法開啟版本選擇視窗：{error}",
+	"beginUpdateFailed": "無法開始更新：{error}",
+	"skipUpdateFailed": "無法繼續目前客戶端：{error}",
+	"loginWindowFailed": "無法開啟登入視窗：{error}",
+	"logoutFailed": "登出失敗：{error}",
+	"initializeFailed": "更新器初始化失敗：{error}",
+	"confirmVersionFailed": "無法確認客戶端版本：{error}",
+	"readVersionsFailed": "無法讀取客戶端版本列表：{error}"
+}

@@ -1,0 +1,8 @@
+{
+	"versionTitle": "現在のクライアントバージョンを選択",
+	"versionDescription": "インストール済みの HydCraft バージョンを選択して、更新を確認してください。",
+	"versionLatest": "最新",
+	"versionLatestSuffix": "（{latest}）",
+	"versionNext": "次へ",
+	"noVersion": "バージョンなし"
+}

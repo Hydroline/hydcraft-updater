@@ -2,4 +2,10 @@ import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import ui from '@nuxt/ui/vite'
 
-export default defineConfig({ plugins: [vue(), ui()], clearScreen: false })
+export default defineConfig({
+	plugins: [vue(), ui()],
+	clearScreen: false,
+	server: {
+		host: '127.0.0.1',
+	},
+})

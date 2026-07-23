@@ -1,0 +1,11 @@
+{
+	"readSourcesFailed": "Unable to read download sources: {error}",
+	"openVersionFailed": "Unable to open the version selection window: {error}",
+	"beginUpdateFailed": "Unable to start the update: {error}",
+	"skipUpdateFailed": "Unable to continue with the current client: {error}",
+	"loginWindowFailed": "Unable to open the sign-in window: {error}",
+	"logoutFailed": "Sign-out failed: {error}",
+	"initializeFailed": "Updater initialization failed: {error}",
+	"confirmVersionFailed": "Unable to confirm the client version: {error}",
+	"readVersionsFailed": "Unable to read the client version list: {error}"
+}

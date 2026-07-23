@@ -1,0 +1,11 @@
+{
+	"readSourcesFailed": "无法读取下载源：{error}",
+	"openVersionFailed": "无法打开版本选择窗口：{error}",
+	"beginUpdateFailed": "无法开始更新：{error}",
+	"skipUpdateFailed": "无法继续当前客户端：{error}",
+	"loginWindowFailed": "无法打开登录窗口：{error}",
+	"logoutFailed": "退出登录失败：{error}",
+	"initializeFailed": "更新器初始化失败：{error}",
+	"confirmVersionFailed": "无法确认客户端版本：{error}",
+	"readVersionsFailed": "无法读取客户端版本列表：{error}"
+}

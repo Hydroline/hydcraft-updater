@@ -1,0 +1,22 @@
+{
+	"appName": "氢气工艺",
+	"updater": "客户端更新器",
+	"login": "登录",
+	"logout": "退出登录",
+	"profile": "个人页面",
+	"accountMenu": "打开账户菜单",
+	"language": "语言",
+	"languageZhCN": "简体中文",
+	"languageZhTW": "繁體中文",
+	"languageJaJP": "日本語",
+	"languageEnUS": "English",
+	"theme": "主题",
+	"themeLight": "浅色",
+	"themeDark": "深色",
+	"themeSystem": "跟随系统",
+	"close": "关闭窗口",
+	"minimize": "最小化窗口",
+	"confirm": "确认",
+	"cancel": "取消",
+	"dialogTitle": "HydCraft 更新器"
+}

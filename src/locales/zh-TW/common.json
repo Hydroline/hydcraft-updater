@@ -1,0 +1,22 @@
+{
+	"appName": "氫氣工藝",
+	"updater": "客戶端更新器",
+	"login": "登入",
+	"logout": "登出",
+	"profile": "個人頁面",
+	"accountMenu": "開啟帳戶選單",
+	"language": "語言",
+	"languageZhCN": "简体中文",
+	"languageZhTW": "繁體中文",
+	"languageJaJP": "日本語",
+	"languageEnUS": "English",
+	"theme": "主題",
+	"themeLight": "淺色",
+	"themeDark": "深色",
+	"themeSystem": "跟隨系統",
+	"close": "關閉視窗",
+	"minimize": "最小化視窗",
+	"confirm": "確認",
+	"cancel": "取消",
+	"dialogTitle": "HydCraft 更新器"
+}
