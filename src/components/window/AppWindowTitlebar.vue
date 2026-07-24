@@ -33,7 +33,7 @@ async function minimize(): Promise<void> {
 	<header
 		:class="[
 			$props.inline ? 'relative' : 'absolute',
-			'top-2 right-0 left-0 z-30 flex h-10 items-center',
+			'top-2 right-0 left-0 z-30 flex h-10 items-center select-none',
 			$props.class,
 		]"
 	>
