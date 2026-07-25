@@ -1,18 +1,40 @@
 import type { UpdaterMessageKey } from '../locales'
 
 export type TabKey = 'upgrade' | 'client' | 'addons' | 'settings' | 'about'
-export type CountdownKind = 'update' | 'launch'
+export type ClientDetailsKind = 'changelog' | 'mods'
+export type UpdaterFailureKind = 'check' | 'update'
 
 export interface UpdaterStatus {
 	mode: 'manual' | 'bootstrap'
 	phase: string
 	message: string
+	failureKind?: UpdaterFailureKind | null
 	remainingSeconds?: number
+	currentVersion?: string | null
+	targetVersion?: string | null
+	download?: DownloadProgress | null
+}
+
+export interface DownloadProgress {
+	source: string
+	downloadedBytes: number
+	totalBytes: number
+	bytesPerSecond: number
+	latencyMs: number
+	resumed: boolean
+}
+
+export interface UpdateConflict {
+	operationId: string
+	target: string
+	reason: string
+	candidates: string[]
 }
 
 export interface UpdaterContext {
 	mode: 'manual' | 'bootstrap'
 	gameDir: string
+	consoleOrigin: string
 }
 
 export interface ClientInspection {
@@ -24,6 +46,19 @@ export interface ClientVersionOption {
 	version: string
 	label: string
 	isLatest: boolean
+	publishedAt: string | null
+	changelog: string | null
+	apiVersion: string | null
+	modCount: number
+	mods: ClientMod[]
+}
+
+export interface ClientMod {
+	id: string
+	name: string
+	version: string
+	description?: string
+	api?: string
 }
 
 export interface DesktopIdentity {
@@ -39,12 +74,14 @@ export interface DownloadSource {
 	priority: number
 	requiresLogin: boolean
 	available: boolean
+	latencyMs: number | null
 }
 
 export interface SelectOption {
 	label: string
 	value: string
 	disabled?: boolean
+	latencyMs?: number | null
 }
 
 export type Translator = (

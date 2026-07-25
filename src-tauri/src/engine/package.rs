@@ -6,14 +6,32 @@ use sha2::{Digest, Sha256};
 use std::io::{Cursor, Read};
 use zip::ZipArchive;
 
+const BUILTIN_UPDATE_PUBLIC_KEY: &str = "MWNn2GhVUuacJD8Mua0gmq4UzjTz3AUwHBELW7Iukrk=";
+
 pub(super) fn verify_envelope(value: &MigrationEnvelope) -> Result<(), EngineError> {
     if value.plan.schema_version != 1
         || value.package_urls.is_empty()
         || value.package_size.parse::<u64>().unwrap_or(0) == 0
+        || (value.anchors.is_empty() && value.plan.anchors.is_empty())
+        || !plan_has_operations(&value.plan)
+        || value.plan.from_version != value.from_version
+        || value.plan.to_version != value.to_version
     {
         return Err(EngineError::Message("更新迁移记录无效".into()));
     }
     Ok(())
+}
+
+pub(super) fn plan_has_operations(value: &UpdatePlan) -> bool {
+    !value.operations.is_empty()
+}
+
+pub(super) fn plan_from_envelope(value: &MigrationEnvelope) -> UpdatePlan {
+    let mut plan = value.plan.clone();
+    if plan.anchors.is_empty() {
+        plan.anchors = value.anchors.clone();
+    }
+    plan
 }
 
 pub(super) fn verify_package(bytes: &[u8], value: &MigrationEnvelope) -> Result<(), EngineError> {
@@ -25,7 +43,7 @@ pub(super) fn verify_package(bytes: &[u8], value: &MigrationEnvelope) -> Result<
         return Err(EngineError::Message("更新 ZIP SHA-256 校验失败".into()));
     }
     let key = std::env::var("HYDCRAFT_UPDATE_PUBLIC_KEY")
-        .map_err(|_| EngineError::Message("缺少 HYDCRAFT_UPDATE_PUBLIC_KEY".into()))?;
+        .unwrap_or_else(|_| BUILTIN_UPDATE_PUBLIC_KEY.to_owned());
     let key_bytes: [u8; 32] = STANDARD
         .decode(key)
         .map_err(|error| EngineError::Message(error.to_string()))?

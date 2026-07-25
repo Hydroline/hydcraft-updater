@@ -13,6 +13,7 @@ pub struct MigrationEnvelope {
     pub package_size: String,
     pub signature: String,
     pub plan: UpdatePlan,
+    #[serde(default)]
     pub anchors: Vec<Anchor>,
 }
 
@@ -23,6 +24,7 @@ pub struct UpdatePlan {
     pub migration_id: String,
     pub from_version: String,
     pub to_version: String,
+    #[serde(default)]
     pub anchors: Vec<Anchor>,
     pub operations: Vec<Operation>,
 }
@@ -147,7 +149,21 @@ pub struct UpdaterStatus {
     pub mode: String,
     pub phase: String,
     pub message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub failure_kind: Option<String>,
     pub remaining_seconds: Option<u8>,
     pub current_version: Option<String>,
     pub target_version: Option<String>,
+    pub download: Option<DownloadProgress>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DownloadProgress {
+    pub source: String,
+    pub downloaded_bytes: u64,
+    pub total_bytes: u64,
+    pub bytes_per_second: u64,
+    pub latency_ms: u64,
+    pub resumed: bool,
 }

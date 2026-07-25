@@ -1,6 +1,6 @@
 use crate::{
     engine, lifecycle,
-    state::{DesktopIdentity, UpdaterState},
+    state::{ClientDetailsRequest, DesktopIdentity, UpdaterState},
     windows,
 };
 use serde::Serialize;
@@ -20,6 +20,7 @@ pub async fn updater_status(
 pub struct UpdaterContext {
     pub mode: String,
     pub game_dir: String,
+    pub console_origin: String,
 }
 
 #[derive(Serialize)]
@@ -34,6 +35,7 @@ pub async fn updater_context(state: State<'_, UpdaterState>) -> Result<UpdaterCo
     Ok(UpdaterContext {
         mode: state.mode.clone(),
         game_dir: state.game_dir.to_string_lossy().into_owned(),
+        console_origin: state.console_origin.clone(),
     })
 }
 
@@ -41,11 +43,52 @@ pub async fn updater_context(state: State<'_, UpdaterState>) -> Result<UpdaterCo
 pub async fn client_version_options(
     state: State<'_, UpdaterState>,
 ) -> Result<Vec<engine::ClientVersionOption>, String> {
-    match engine::list_versions(&state).await {
-        Ok(options) if !options.is_empty() => Ok(options),
-        Ok(_) => Ok(engine::fallback_version_options()),
-        Err(error) => Err(error.to_string()),
+    engine::list_versions(&state)
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClientDetailsWindowData {
+    pub detail: String,
+    pub version: engine::ClientVersionOption,
+}
+
+#[tauri::command]
+pub async fn open_client_details_window(
+    version: String,
+    detail: String,
+    app: AppHandle,
+    state: State<'_, UpdaterState>,
+) -> Result<(), String> {
+    if !matches!(detail.as_str(), "changelog" | "mods") {
+        return Err("CLIENT_DETAIL_KIND_INVALID".into());
     }
+    *state.client_details.write().await = Some(ClientDetailsRequest { version, detail });
+    windows::open_client_details_window(app)
+}
+
+#[tauri::command]
+pub async fn client_details_window_data(
+    state: State<'_, UpdaterState>,
+) -> Result<ClientDetailsWindowData, String> {
+    let request = state
+        .client_details
+        .read()
+        .await
+        .clone()
+        .ok_or_else(|| "CLIENT_DETAILS_NOT_SELECTED".to_string())?;
+    let version = engine::list_versions(&state)
+        .await
+        .map_err(|error| error.to_string())?
+        .into_iter()
+        .find(|option| option.version == request.version)
+        .ok_or_else(|| "CLIENT_VERSION_NOT_FOUND".to_string())?;
+    Ok(ClientDetailsWindowData {
+        detail: request.detail,
+        version,
+    })
 }
 
 #[tauri::command]
@@ -102,6 +145,7 @@ pub async fn resolve_conflicts(
     state.conflicts.write().await.clear();
     let selected = state.selected_version.read().await.clone();
     let source = state.selected_source.read().await.clone();
+    state.set_status("updating", "正在更新客户端", None).await;
     lifecycle::spawn_update(state.inner().clone(), selected, source);
     Ok(state.status.read().await.clone())
 }
@@ -111,11 +155,6 @@ pub async fn select_current_version(
     version: String,
     state: State<'_, UpdaterState>,
 ) -> Result<crate::contracts::UpdaterStatus, String> {
-    let version = if version == "__no-version__" {
-        "1.0.0".to_string()
-    } else {
-        version
-    };
     *state.selected_version.write().await = Some(version.clone());
     state
         .set_status("checking-update", "正在校验所选客户端版本", None)
@@ -123,7 +162,13 @@ pub async fn select_current_version(
     match engine::check_next(&state, &version).await {
         Ok(check) if check.update_available => {
             state
-                .set_status("awaiting-update-decision", "发现客户端更新", None)
+                .set_status_with_versions(
+                    "awaiting-update-decision",
+                    "发现客户端更新",
+                    None,
+                    Some(check.current_version),
+                    Some(check.to_version),
+                )
                 .await;
         }
         Ok(_) => {
@@ -133,7 +178,7 @@ pub async fn select_current_version(
         }
         Err(error) => {
             state
-                .set_status("failed", &format!("无法检查当前客户端版本：{error}"), None)
+                .set_failure_status(&format!("无法检查当前客户端版本：{error}"), "check")
                 .await
         }
     }
@@ -163,10 +208,19 @@ pub async fn recheck_update(state: State<'_, UpdaterState>) -> Result<(), String
     let Some(version) = state.selected_version.read().await.clone() else {
         return Ok(());
     };
+    state
+        .set_status("checking-update", "正在检查客户端更新", None)
+        .await;
     match engine::check_next(&state, &version).await {
         Ok(check) if check.update_available => {
             state
-                .set_status("awaiting-update-decision", "发现客户端更新", None)
+                .set_status_with_versions(
+                    "awaiting-update-decision",
+                    "发现客户端更新",
+                    None,
+                    Some(check.current_version),
+                    Some(check.to_version),
+                )
                 .await
         }
         Ok(_) => {
@@ -176,20 +230,9 @@ pub async fn recheck_update(state: State<'_, UpdaterState>) -> Result<(), String
         }
         Err(error) => {
             state
-                .set_status("failed", &format!("更新检查失败：{error}"), None)
+                .set_failure_status(&format!("更新检查失败：{error}"), "check")
                 .await
         }
-    }
-    Ok(())
-}
-
-#[tauri::command]
-pub async fn skip_update(app: AppHandle, state: State<'_, UpdaterState>) -> Result<(), String> {
-    state
-        .set_status("deferred", "已选择继续使用当前客户端", None)
-        .await;
-    if state.mode == "bootstrap" {
-        app.exit(0);
     }
     Ok(())
 }
@@ -202,6 +245,29 @@ pub async fn launch_client(app: AppHandle, state: State<'_, UpdaterState>) -> Re
     app.exit(0);
     Ok(())
 }
+
+#[tauri::command]
+pub fn play_failure_sound() -> Result<(), String> {
+    system_error_beep();
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
+fn system_error_beep() {
+    const MB_ICONERROR: u32 = 0x00000010;
+
+    #[link(name = "user32")]
+    extern "system" {
+        fn MessageBeep(u_type: u32) -> i32;
+    }
+
+    unsafe {
+        let _ = MessageBeep(MB_ICONERROR);
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn system_error_beep() {}
 
 #[tauri::command]
 pub fn hide_auth_window(app: AppHandle) -> Result<(), String> {

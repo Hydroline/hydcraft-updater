@@ -20,6 +20,7 @@ defineProps<{
 	appName: string
 	authenticated: boolean
 	displayName: string
+	hasAvailableUpdate: boolean
 	identity: DesktopIdentity | null
 	localeItems: readonly LocaleOption[]
 	loginBusy: boolean
@@ -40,6 +41,18 @@ const emit = defineEmits<{
 }>()
 
 const accountMenuOpen = ref(false)
+const themeMenuOpen = ref(false)
+const localeMenuOpen = ref(false)
+
+function selectTheme(value: ThemeMode): void {
+	themeMenuOpen.value = false
+	emit('selectTheme', value)
+}
+
+function selectLocale(value: LocaleCode): void {
+	localeMenuOpen.value = false
+	emit('selectLocale', value)
+}
 </script>
 
 <template>
@@ -49,15 +62,24 @@ const accountMenuOpen = ref(false)
 	>
 		<div>
 			<img :src="hydcraftLogo" :alt="appName" class="size-12 object-contain" />
-			<h1 class="mt-5 text-3xl font-semibold tracking-wide">{{ appName }}</h1>
-			<p class="mt-1 text-sm text-slate-600 dark:text-slate-300">
+			<h1 class="mt-5 text-3xl font-semibold">{{ appName }}</h1>
+			<p class="text-base tracking-tight text-slate-600 dark:text-slate-300">
 				{{ t('updater') }}
 			</p>
+			<UBadge
+				v-if="hasAvailableUpdate"
+				color="primary"
+				variant="soft"
+				class="mt-1 rounded-full px-3 py-1 text-xs font-medium"
+			>
+				{{ t('updateAvailable') }}
+			</UBadge>
 		</div>
 
 		<div class="mt-auto flex items-center">
 			<div class="flex flex-1 items-center gap-2">
 				<UPopover
+					v-model:open="themeMenuOpen"
 					:popper="{ placement: 'top-start' }"
 					:ui="{ content: 'z-[40000]' }"
 				>
@@ -86,7 +108,7 @@ const accountMenuOpen = ref(false)
 									'text-slate-600 dark:text-slate-300':
 										themeMode !== mode.value,
 								}"
-								@click="emit('selectTheme', mode.value)"
+								@click="selectTheme(mode.value)"
 							>
 								<UIcon :name="mode.icon" class="h-4 w-4" />
 								<span>{{ t(mode.label) }}</span>
@@ -101,6 +123,7 @@ const accountMenuOpen = ref(false)
 				</UPopover>
 
 				<UPopover
+					v-model:open="localeMenuOpen"
 					:popper="{ placement: 'top-start' }"
 					:ui="{ content: 'z-[40000]' }"
 				>
@@ -129,7 +152,7 @@ const accountMenuOpen = ref(false)
 									'text-slate-600 dark:text-slate-300':
 										selectedLocale !== item.value,
 								}"
-								@click="emit('selectLocale', item.value)"
+								@click="selectLocale(item.value)"
 							>
 								<span>{{ item.label }}</span>
 								<UIcon

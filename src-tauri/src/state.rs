@@ -1,4 +1,4 @@
-use crate::contracts::{UpdateConflict, UpdaterStatus};
+use crate::contracts::{DownloadProgress, UpdateConflict, UpdaterStatus};
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, path::PathBuf, sync::Arc};
 use tauri::{AppHandle, Emitter};
@@ -17,6 +17,7 @@ pub struct UpdaterState {
     pub identity: Arc<RwLock<Option<DesktopIdentity>>>,
     pub conflicts: Arc<RwLock<Vec<UpdateConflict>>>,
     pub resolutions: Arc<RwLock<HashMap<String, String>>>,
+    pub client_details: Arc<RwLock<Option<ClientDetailsRequest>>>,
 }
 
 impl UpdaterState {
@@ -30,9 +31,11 @@ impl UpdaterState {
                 mode,
                 phase: "checking-migration".into(),
                 message: "正在获取客户端更新迁移".into(),
+                failure_kind: None,
                 remaining_seconds: None,
                 current_version: None,
                 target_version: None,
+                download: None,
             })),
             selected_version: Arc::new(RwLock::new(None)),
             selected_source: Arc::new(RwLock::new(None)),
@@ -40,16 +43,65 @@ impl UpdaterState {
             identity: Arc::new(RwLock::new(None)),
             conflicts: Arc::new(RwLock::new(Vec::new())),
             resolutions: Arc::new(RwLock::new(HashMap::new())),
+            client_details: Arc::new(RwLock::new(None)),
         }
     }
     pub async fn set_status(&self, phase: &str, message: &str, remaining: Option<u8>) {
+        self.set_status_with_versions(phase, message, remaining, None, None)
+            .await;
+    }
+
+    pub async fn set_status_with_versions(
+        &self,
+        phase: &str,
+        message: &str,
+        remaining: Option<u8>,
+        current_version: Option<String>,
+        target_version: Option<String>,
+    ) {
         let status = UpdaterStatus {
             mode: self.mode.clone(),
             phase: phase.into(),
             message: message.into(),
+            failure_kind: None,
             remaining_seconds: remaining,
+            current_version,
+            target_version,
+            download: None,
+        };
+        *self.status.write().await = status.clone();
+        if let Some(app) = self.app.read().await.clone() {
+            let _ = app.emit("updater-status", status);
+        }
+    }
+
+    pub async fn set_failure_status(&self, message: &str, failure_kind: &str) {
+        let status = UpdaterStatus {
+            mode: self.mode.clone(),
+            phase: "failed".into(),
+            message: message.into(),
+            failure_kind: Some(failure_kind.into()),
+            remaining_seconds: None,
             current_version: None,
             target_version: None,
+            download: None,
+        };
+        *self.status.write().await = status.clone();
+        if let Some(app) = self.app.read().await.clone() {
+            let _ = app.emit("updater-status", status);
+        }
+    }
+
+    pub async fn set_download_status(&self, message: &str, download: DownloadProgress) {
+        let status = UpdaterStatus {
+            mode: self.mode.clone(),
+            phase: "updating".into(),
+            message: message.into(),
+            failure_kind: None,
+            remaining_seconds: None,
+            current_version: None,
+            target_version: None,
+            download: Some(download),
         };
         *self.status.write().await = status.clone();
         if let Some(app) = self.app.read().await.clone() {
@@ -60,6 +112,12 @@ impl UpdaterState {
     pub async fn bind_app(&self, app: AppHandle) {
         *self.app.write().await = Some(app);
     }
+}
+
+#[derive(Clone)]
+pub struct ClientDetailsRequest {
+    pub version: String,
+    pub detail: String,
 }
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]

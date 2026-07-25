@@ -19,10 +19,7 @@ const loading = ref(true)
 const failed = ref(false)
 const versionItems = computed(() =>
 	options.value.map((option) => ({
-		label:
-			option.version === '__no-version__'
-				? t('noVersion')
-				: `${option.label}${option.isLatest ? t('versionLatestSuffix', { latest: t('versionLatest') }) : ''}`,
+		label: `${option.label}${option.isLatest ? t('versionLatestSuffix', { latest: t('versionLatest') }) : ''}`,
 		value: option.version,
 	})),
 )

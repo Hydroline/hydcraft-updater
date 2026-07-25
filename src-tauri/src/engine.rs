@@ -29,6 +29,28 @@ pub struct ClientVersionOption {
     pub version: String,
     pub label: String,
     pub is_latest: bool,
+    #[serde(default)]
+    pub published_at: Option<String>,
+    #[serde(default)]
+    pub changelog: Option<String>,
+    #[serde(default)]
+    pub api_version: Option<String>,
+    #[serde(default)]
+    pub mod_count: u32,
+    #[serde(default)]
+    pub mods: Vec<ClientMod>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClientMod {
+    pub id: String,
+    pub name: String,
+    pub version: String,
+    #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub api: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -39,6 +61,8 @@ pub struct DownloadSource {
     pub priority: i32,
     pub requires_login: bool,
     pub available: bool,
+    #[serde(default)]
+    pub latency_ms: Option<u32>,
 }
 
 pub async fn fetch_next(
@@ -60,14 +84,6 @@ pub async fn list_versions(state: &UpdaterState) -> Result<Vec<ClientVersionOpti
     network::list_versions(state).await
 }
 
-pub fn fallback_version_options() -> Vec<ClientVersionOption> {
-    vec![ClientVersionOption {
-        version: "__no-version__".into(),
-        label: "__no-version__".into(),
-        is_latest: false,
-    }]
-}
-
 pub async fn list_sources(
     state: &UpdaterState,
     locale: &str,
@@ -77,6 +93,10 @@ pub async fn list_sources(
 
 pub fn inspect_client_version(game: &std::path::Path) -> Result<Option<String>, EngineError> {
     storage::inspect_client_version(game)
+}
+
+pub fn recover_unfinished_transaction(game: &std::path::Path) -> Result<bool, EngineError> {
+    transaction::recover_unfinished_transaction(game)
 }
 
 pub async fn apply_next(
@@ -95,18 +115,27 @@ pub async fn apply_next(
             None => return Ok(None),
         };
     package::verify_envelope(&migration)?;
-    storage::verify_anchors(&state.game_dir, &migration.anchors)?;
-    let bytes = network::download_package(&migration).await?;
+    let anchors = if migration.anchors.is_empty() {
+        &migration.plan.anchors
+    } else {
+        &migration.anchors
+    };
+    storage::verify_anchors(&state.game_dir, anchors)?;
+    let bytes = network::download_package(state, &migration).await?;
     package::verify_package(&bytes, &migration)?;
-    let extracted = package::extract_plan(&bytes)?;
-    if extracted.migration_id != migration.migration_id
-        || extracted.from_version != migration.from_version
-        || extracted.to_version != migration.to_version
-    {
-        return Err(EngineError::Message(
-            "ZIP 内更新计划与 Console 迁移记录不一致".into(),
-        ));
+    let console_plan = package::plan_from_envelope(&migration);
+    // Console 迁移记录是执行计划的权威来源，ZIP 内计划只用于兼容性校验。
+    if let Ok(value) = package::extract_plan(&bytes) {
+        if value.migration_id != console_plan.migration_id
+            || value.from_version != migration.from_version
+            || value.to_version != migration.to_version
+        {
+            return Err(EngineError::Message(
+                "ZIP 内更新计划与 Console 迁移记录不一致".into(),
+            ));
+        }
     }
+    let extracted = console_plan;
     let resolutions = state.resolutions.read().await.clone();
     let conflicts = transaction::preflight_conflicts(
         &state.game_dir,
@@ -114,6 +143,7 @@ pub async fn apply_next(
         &client_state,
         &resolutions,
         &bytes,
+        anchors,
     )?;
     if !conflicts.is_empty() {
         return Err(EngineError::Conflicts(conflicts));

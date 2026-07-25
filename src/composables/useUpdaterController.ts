@@ -1,18 +1,25 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { message } from '@tauri-apps/plugin-dialog'
 import { useUpdaterAppearance } from './useUpdaterAppearance'
-import { invokeDesktop, startCurrentWindowDragging } from '../utils/tauri'
+import {
+	clearCurrentWindowAttention,
+	invokeDesktop,
+	playSystemFailureSound,
+	requestCurrentWindowAttention,
+	startCurrentWindowDragging,
+} from '../utils/tauri'
 import type { UpdaterMessageKey } from '../locales'
 import {
 	SOURCE_KEY,
 	THEME_MODES,
 	type ClientInspection,
+	type ClientDetailsKind,
 	type ClientVersionOption,
-	type CountdownKind,
 	type DesktopIdentity,
 	type DownloadSource,
 	type SelectOption,
 	type TabKey,
+	type UpdateConflict,
 	type UpdaterContext,
 	type UpdaterStatus,
 } from '../types/updater'
@@ -20,25 +27,31 @@ import {
 export function useUpdaterController() {
 	const { locale, themeMode, selectLocale, selectTheme, t } =
 		useUpdaterAppearance()
-	const context = ref<UpdaterContext>({ mode: 'manual', gameDir: '' })
+	const context = ref<UpdaterContext>({
+		mode: 'manual',
+		gameDir: '',
+		consoleOrigin: '',
+	})
 	const clientVersions = ref<ClientVersionOption[]>([])
+	const currentClientVersion = ref<string | null>(null)
 	const status = ref<UpdaterStatus>({
 		mode: 'manual',
 		phase: 'starting',
 		message: '',
 	})
 	const identity = ref<DesktopIdentity | null>(null)
+	const conflicts = ref<UpdateConflict[]>([])
+	const conflictSelections = ref<Record<string, string>>({})
 	const sources = ref<DownloadSource[]>([])
 	const selectedSource = ref(localStorage.getItem(SOURCE_KEY) ?? '')
 	const tab = ref<TabKey>('upgrade')
-	const countdown = ref(10)
-	const countdownKind = ref<CountdownKind | null>(null)
 	const loginBusy = ref(false)
-	let countdownTimer: ReturnType<typeof setInterval> | undefined
+	let sourceSelectionManuallyChanged = false
 	let unlistenStatus: (() => void) | undefined
 	let unlistenAuth: (() => void) | undefined
 	let lastNotifiedPhase = ''
-	let countdownMousePosition: { x: number; y: number } | undefined
+	let clientVersionsLoaded = false
+	let versionWindowOpened = false
 
 	const isBootstrap = computed(() => context.value.mode === 'bootstrap')
 	const authenticated = computed(() => Boolean(identity.value))
@@ -53,12 +66,15 @@ export function useUpdaterController() {
 	)
 	const processIcon = computed(() => {
 		if (status.value.phase === 'failed') return 'i-lucide-circle-alert'
+		if (status.value.phase === 'unknown-client') return 'i-lucide-circle-help'
 		if (['up-to-date', 'ready'].includes(status.value.phase))
 			return 'i-lucide-circle-check-big'
 		return 'i-lucide-package'
 	})
-	const showProcessSpinner = computed(
-		() => !['failed', 'up-to-date', 'ready'].includes(status.value.phase),
+	const showProcessSpinner = computed(() =>
+		['starting', 'checking-migration', 'checking-update', 'updating'].includes(
+			status.value.phase,
+		),
 	)
 	const phaseTitle = computed(() => {
 		const titles: Record<string, UpdaterMessageKey> = {
@@ -66,10 +82,10 @@ export function useUpdaterController() {
 			'awaiting-version': 'statusAwaitingVersion',
 			'checking-update': 'statusCheckingUpdate',
 			'awaiting-update-decision': 'statusAwaitingUpdateDecision',
+			'unknown-client': 'statusUnknownClient',
 			updating: 'statusUpdating',
 			ready: 'statusReady',
 			'up-to-date': 'statusUpToDate',
-			deferred: 'statusDeferred',
 			failed: 'statusFailed',
 		}
 		const key = titles[status.value.phase]
@@ -80,10 +96,10 @@ export function useUpdaterController() {
 		'awaiting-version': 'statusAwaitingVersion',
 		'checking-update': 'statusCheckingUpdate',
 		'awaiting-update-decision': 'statusAwaitingUpdateDecision',
+		'unknown-client': 'statusUnknownClient',
 		updating: 'statusUpdating',
 		ready: 'statusReady',
 		'up-to-date': 'statusUpToDate',
-		deferred: 'statusDeferred',
 		failed: 'statusFailed',
 	}
 	const localizedStatusMessage = computed(() => {
@@ -101,11 +117,14 @@ export function useUpdaterController() {
 		return message && message !== phaseTitle.value ? message : ''
 	})
 	const sourceItems = computed<SelectOption[]>(() =>
-		sources.value.map((source) => ({
-			label: `${source.label}${source.requiresLogin && !source.available ? ` ${t('sourceLoginRequired')}` : ''}`,
-			value: source.key,
-			disabled: !source.available,
-		})),
+		sources.value
+			.filter((source) => !source.requiresLogin || authenticated.value)
+			.map((source) => ({
+				label: source.label,
+				value: source.key,
+				disabled: !source.available,
+				latencyMs: source.latencyMs,
+			})),
 	)
 	const localeItems = computed(
 		() =>
@@ -135,45 +154,18 @@ export function useUpdaterController() {
 		}
 	}
 
-	function clearCountdown(): void {
-		if (countdownTimer) clearInterval(countdownTimer)
-		countdownTimer = undefined
-		countdownKind.value = null
-		countdownMousePosition = undefined
+	async function nativeError(text: string): Promise<void> {
+		if (status.value.phase === 'failed') return
+		await nativeMessage(text, 'error')
 	}
 
-	function interruptCountdown(): void {
-		if (!countdownTimer) return
-		clearCountdown()
-		countdown.value = 0
-	}
-
-	function armCountdown(kind: CountdownKind): void {
-		clearCountdown()
-		countdown.value = 10
-		countdownKind.value = kind
-		countdownMousePosition = undefined
-		countdownTimer = setInterval(() => {
-			countdown.value -= 1
-			if (countdown.value > 0) return
-			const action = countdownKind.value
-			clearCountdown()
-			if (action === 'update') void beginUpdate()
-			if (action === 'launch') void launchClient()
-		}, 1000)
-	}
-
-	function handleWindowMouseMove(event: MouseEvent): void {
-		if (!countdownTimer) return
-		if (!countdownMousePosition) {
-			countdownMousePosition = { x: event.clientX, y: event.clientY }
-			return
+	async function notifyFailure(): Promise<void> {
+		await playSystemFailureSound().catch(() => undefined)
+		try {
+			await requestCurrentWindowAttention()
+		} catch {
+			// Window attention is best effort; the page still contains the failure.
 		}
-		const distanceSquared =
-			(event.clientX - countdownMousePosition.x) ** 2 +
-			(event.clientY - countdownMousePosition.y) ** 2
-		if (distanceSquared < 4) return
-		interruptCountdown()
 	}
 
 	async function refreshIdentity(): Promise<void> {
@@ -190,11 +182,21 @@ export function useUpdaterController() {
 					locale: locale.value,
 				},
 			)
-			const preferred = sources.value.find(
-				(source) => source.key === selectedSource.value && source.available,
+			const selectableSources = sources.value.filter(
+				(source) => !source.requiresLogin || authenticated.value,
 			)
+			const preferredKey = identity.value
+				? 'dl-shanghai-cdn'
+				: selectedSource.value
+			const preferred = sourceSelectionManuallyChanged
+				? selectableSources.find(
+						(source) => source.key === selectedSource.value && source.available,
+					)
+				: selectableSources.find(
+						(source) => source.key === preferredKey && source.available,
+					)
 			const fallback =
-				preferred ?? sources.value.find((source) => source.available)
+				preferred ?? selectableSources.find((source) => source.available)
 			if (fallback) {
 				selectedSource.value = fallback.key
 				localStorage.setItem(SOURCE_KEY, fallback.key)
@@ -203,10 +205,7 @@ export function useUpdaterController() {
 				})
 			}
 		} catch (error) {
-			await nativeMessage(
-				t('readSourcesFailed', { error: String(error) }),
-				'error',
-			)
+			await nativeError(t('readSourcesFailed', { error: String(error) }))
 		}
 	}
 
@@ -214,56 +213,111 @@ export function useUpdaterController() {
 		try {
 			await invokeDesktop<void>('open_version_window')
 		} catch (error) {
-			await nativeMessage(
-				t('openVersionFailed', { error: String(error) }),
-				'error',
-			)
+			await nativeError(t('openVersionFailed', { error: String(error) }))
 		}
+	}
+
+	async function openClientDetails(
+		version: string,
+		detail: ClientDetailsKind,
+	): Promise<void> {
+		try {
+			await invokeDesktop<void>('open_client_details_window', {
+				version,
+				detail,
+			})
+		} catch (error) {
+			await nativeError(t('openClientDetailsFailed', { error: String(error) }))
+		}
+	}
+
+	async function openVersionWindowIfAvailable(): Promise<void> {
+		if (
+			!clientVersionsLoaded ||
+			versionWindowOpened ||
+			!clientVersions.value.length
+		)
+			return
+		versionWindowOpened = true
+		await openVersionWindow()
 	}
 
 	async function beginUpdate(): Promise<void> {
-		interruptCountdown()
+		conflicts.value = []
+		conflictSelections.value = {}
+		await clearCurrentWindowAttention().catch(() => undefined)
 		try {
 			await invokeDesktop<void>('begin_update')
 		} catch (error) {
-			await nativeMessage(
-				t('beginUpdateFailed', { error: String(error) }),
-				'error',
-			)
+			await nativeError(t('beginUpdateFailed', { error: String(error) }))
 		}
 	}
 
-	async function skipUpdate(): Promise<void> {
-		interruptCountdown()
+	async function retryUpdate(): Promise<void> {
+		if (status.value.failureKind === 'check') {
+			await recheckUpdate()
+			return
+		}
+		await beginUpdate()
+	}
+
+	async function loadConflicts(): Promise<void> {
+		conflicts.value = await invokeDesktop<UpdateConflict[]>('pending_conflicts')
+		conflictSelections.value = Object.fromEntries(
+			conflicts.value.map((conflict) => [
+				conflict.operationId,
+				conflictSelections.value[conflict.operationId] ||
+					conflict.candidates[0] ||
+					conflict.target,
+			]),
+		)
+	}
+
+	function selectConflictResolution(operationId: string, value: string): void {
+		conflictSelections.value = {
+			...conflictSelections.value,
+			[operationId]: value,
+		}
+	}
+
+	async function resolveConflicts(): Promise<void> {
+		const resolutions = Object.fromEntries(
+			conflicts.value.map((conflict) => [
+				conflict.operationId,
+				conflictSelections.value[conflict.operationId] ||
+					conflict.candidates[0] ||
+					conflict.target,
+			]),
+		)
+		const next = await invokeDesktop<UpdaterStatus>('resolve_conflicts', {
+			resolutions,
+		})
+		await applyStatus(next)
+	}
+
+	async function recheckUpdate(): Promise<void> {
+		await clearCurrentWindowAttention().catch(() => undefined)
 		try {
-			await invokeDesktop<void>('skip_update')
+			await invokeDesktop<void>('recheck_update')
 		} catch (error) {
-			await nativeMessage(
-				t('skipUpdateFailed', { error: String(error) }),
-				'error',
-			)
+			await nativeError(t('beginUpdateFailed', { error: String(error) }))
 		}
 	}
 
 	async function launchClient(): Promise<void> {
-		interruptCountdown()
 		try {
 			await invokeDesktop<void>('launch_client')
 		} catch {
-			await nativeMessage(t('manualLaunchUnavailable'), 'error')
+			await nativeError(t('manualLaunchUnavailable'))
 		}
 	}
 
 	async function startLogin(): Promise<void> {
 		loginBusy.value = true
-		interruptCountdown()
 		try {
 			await invokeDesktop<void>('start_desktop_login')
 		} catch (error) {
-			await nativeMessage(
-				t('loginWindowFailed', { error: String(error) }),
-				'error',
-			)
+			await nativeError(t('loginWindowFailed', { error: String(error) }))
 		} finally {
 			loginBusy.value = false
 		}
@@ -273,9 +327,10 @@ export function useUpdaterController() {
 		try {
 			await invokeDesktop<void>('logout_desktop')
 			identity.value = null
+			sourceSelectionManuallyChanged = false
 			await loadSources()
 		} catch (error) {
-			await nativeMessage(t('logoutFailed', { error: String(error) }), 'error')
+			await nativeError(t('logoutFailed', { error: String(error) }))
 		}
 	}
 
@@ -292,41 +347,37 @@ export function useUpdaterController() {
 
 	async function applyStatus(next: UpdaterStatus): Promise<void> {
 		status.value = next
-		if (next.phase === 'awaiting-version') await openVersionWindow()
+		if (!['failed', 'up-to-date'].includes(next.phase)) lastNotifiedPhase = ''
+		if (next.phase === 'awaiting-version') await openVersionWindowIfAvailable()
+		if (next.phase === 'awaiting-conflict-resolution') await loadConflicts()
 		if (next.phase === 'awaiting-update-decision') {
 			await loadSources()
-			armCountdown('update')
 		}
-		if (next.phase === 'ready' && isBootstrap.value) armCountdown('launch')
-		if (next.phase === 'up-to-date' && isBootstrap.value) armCountdown('launch')
 		if (next.phase === 'authenticated') {
 			await refreshIdentity()
 			await loadSources()
 			await invokeDesktop<void>('recheck_update')
 		}
-		if (
-			['failed', 'deferred', 'up-to-date'].includes(next.phase) &&
-			lastNotifiedPhase !== next.phase
-		) {
+		if (next.phase === 'failed' && lastNotifiedPhase !== next.phase) {
 			lastNotifiedPhase = next.phase
-			if (next.phase !== 'up-to-date' || !isBootstrap.value)
-				await nativeMessage(
-					localizedStatusMessage.value,
-					next.phase === 'failed' ? 'error' : 'info',
-				)
+			await notifyFailure()
 		}
 	}
 
 	async function refresh(): Promise<void> {
 		context.value = await invokeDesktop<UpdaterContext>('updater_context')
 		status.value = await invokeDesktop<UpdaterStatus>('updater_status')
+		if (status.value.phase === 'failed') {
+			lastNotifiedPhase = 'failed'
+			await notifyFailure()
+		}
 		const versionOptions = await invokeDesktop<ClientVersionOption[]>(
 			'client_version_options',
 		)
-		clientVersions.value = versionOptions.filter(
-			(option) => option.version !== '__no-version__',
-		)
+		clientVersions.value = versionOptions
+		clientVersionsLoaded = true
 		const inspection = await invokeDesktop<ClientInspection>('inspect_client')
+		currentClientVersion.value = inspection.version
 		if (
 			inspection.version &&
 			['starting', 'checking-migration', 'awaiting-version'].includes(
@@ -340,20 +391,18 @@ export function useUpdaterController() {
 		}
 		await refreshIdentity()
 		await loadSources()
-		if (status.value.phase === 'awaiting-version') await openVersionWindow()
+		if (status.value.phase === 'awaiting-version')
+			await openVersionWindowIfAvailable()
+		if (status.value.phase === 'awaiting-conflict-resolution')
+			await loadConflicts()
 		if (status.value.phase === 'awaiting-update-decision') {
 			await loadSources()
-			armCountdown('update')
 		}
-		if (
-			['ready', 'up-to-date'].includes(status.value.phase) &&
-			isBootstrap.value
-		)
-			armCountdown('launch')
 	}
 
 	function selectSource(key: string | undefined): void {
 		if (!key) return
+		sourceSelectionManuallyChanged = true
 		selectedSource.value = key
 		localStorage.setItem(SOURCE_KEY, key)
 		void invokeDesktop<void>('select_download_source', { sourceKey: key })
@@ -386,15 +435,11 @@ export function useUpdaterController() {
 			}
 			await refresh()
 		} catch (error) {
-			await nativeMessage(
-				t('initializeFailed', { error: String(error) }),
-				'error',
-			)
+			await nativeError(t('initializeFailed', { error: String(error) }))
 		}
 	})
 
 	onBeforeUnmount(() => {
-		clearCountdown()
 		unlistenStatus?.()
 		unlistenAuth?.()
 	})
@@ -403,9 +448,10 @@ export function useUpdaterController() {
 		appName,
 		authenticated,
 		clientVersions,
+		conflictSelections,
+		conflicts,
+		currentClientVersion,
 		context,
-		countdown,
-		countdownKind,
 		displayName,
 		identity,
 		isBootstrap,
@@ -432,12 +478,14 @@ export function useUpdaterController() {
 		themeModes: THEME_MODES,
 		beginUpdate,
 		dragFromAside,
-		handleWindowMouseMove,
-		interruptCountdown,
 		launchClient,
 		logout,
 		openProfile,
 		openExternalUrl,
-		skipUpdate,
+		openClientDetails,
+		retryUpdate,
+		recheckUpdate,
+		resolveConflicts,
+		selectConflictResolution,
 	}
 }

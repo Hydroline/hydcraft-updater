@@ -13,12 +13,14 @@ const emit = defineEmits<{
 </script>
 
 <template>
-	<section
-		class="flex flex-1 items-center justify-center px-6 pb-8 pt-16 text-center"
-	>
+	<section class="flex flex-1 items-center justify-center p-6 text-center">
 		<div class="flex max-w-2xl flex-col items-center">
-			<h2 class="text-xl font-semibold">{{ t('aboutTitle') }}</h2>
-			<p class="mt-2 text-sm text-slate-500 dark:text-slate-400">
+			<h2
+				class="text-3xl font-medium tracking-tight text-slate-900 dark:text-slate-100"
+			>
+				{{ t('aboutTitle') }}
+			</h2>
+			<p class="mt-1 text-sm text-slate-500 dark:text-slate-400">
 				{{ t('aboutVersion') }}
 			</p>
 			<p
@@ -26,16 +28,16 @@ const emit = defineEmits<{
 			>
 				{{ t('aboutDescription') }}
 			</p>
-			<div class="mt-4 flex items-center gap-4">
+			<div class="mt-10 flex items-center gap-4">
 				<UButton
 					color="neutral"
 					variant="link"
-					class="h-6 p-0 text-slate-500 transition hover:text-slate-950 dark:text-slate-400 dark:hover:text-white"
+					class="h-6 p-0 text-slate-800 dark:text-slate-100 transition-opacity hover:opacity-70"
 					:aria-label="t('aboutGithub')"
 					@click="emit('openExternalUrl', 'https://github.com/Hydroline')"
 				>
 					<UIcon name="i-lucide-github" class="size-6" />
-					<span class="text-base select-none">GitHub</span>
+					<div class="text-base select-none">GitHub</div>
 				</UButton>
 				<button
 					type="button"

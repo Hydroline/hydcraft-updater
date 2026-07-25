@@ -2,7 +2,6 @@
 	"readSourcesFailed": "ダウンロード元を読み込めません：{error}",
 	"openVersionFailed": "バージョン選択ウィンドウを開けません：{error}",
 	"beginUpdateFailed": "更新を開始できません：{error}",
-	"skipUpdateFailed": "現在のクライアントを続行できません：{error}",
 	"loginWindowFailed": "ログインウィンドウを開けません：{error}",
 	"logoutFailed": "ログアウトに失敗しました：{error}",
 	"initializeFailed": "アップデーターを初期化できません：{error}",

@@ -25,7 +25,7 @@ pub async fn execute_update(
             }
             Err(error) => {
                 state
-                    .set_status("failed", &format!("更新失败：{error}"), None)
+                    .set_failure_status(&format!("更新失败：{error}"), "update")
                     .await;
                 break;
             }
@@ -34,13 +34,25 @@ pub async fn execute_update(
 }
 
 pub async fn initialize_updater(state: UpdaterState) {
+    if let Err(error) = engine::recover_unfinished_transaction(&state.game_dir) {
+        state
+            .set_failure_status(&format!("恢复未完成更新失败：{error}"), "update")
+            .await;
+        return;
+    }
     match engine::inspect_client_version(&state.game_dir) {
         Ok(Some(version)) => {
             *state.selected_version.write().await = Some(version.clone());
             match engine::check_next(&state, &version).await {
                 Ok(check) if check.update_available => {
                     state
-                        .set_status("awaiting-update-decision", "发现客户端更新", None)
+                        .set_status_with_versions(
+                            "awaiting-update-decision",
+                            "发现客户端更新",
+                            None,
+                            Some(check.current_version),
+                            Some(check.to_version),
+                        )
                         .await
                 }
                 Ok(_) => {
@@ -50,19 +62,25 @@ pub async fn initialize_updater(state: UpdaterState) {
                 }
                 Err(error) => {
                     state
-                        .set_status("failed", &format!("检查客户端更新失败：{error}"), None)
+                        .set_failure_status(&format!("检查客户端更新失败：{error}"), "check")
                         .await
                 }
             }
         }
-        Ok(None) => {
-            state
-                .set_status("awaiting-version", "请选择当前客户端版本", None)
-                .await;
-        }
+        Ok(None) => match engine::list_versions(&state).await {
+            Ok(options) if options.is_empty() => {
+                state.set_status("unknown-client", "", None).await;
+            }
+            Ok(_) => {
+                state.set_status("awaiting-version", "", None).await;
+            }
+            Err(error) => {
+                state.set_failure_status(&error.to_string(), "check").await;
+            }
+        },
         Err(error) => {
             state
-                .set_status("failed", &format!("无法读取当前客户端版本：{error}"), None)
+                .set_failure_status(&format!("无法读取当前客户端版本：{error}"), "check")
                 .await;
         }
     }

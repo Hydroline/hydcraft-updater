@@ -42,3 +42,20 @@ export async function startCurrentWindowDragging(): Promise<void> {
 	const { getCurrentWindow } = await import('@tauri-apps/api/window')
 	await getCurrentWindow().startDragging()
 }
+
+export async function requestCurrentWindowAttention(): Promise<void> {
+	if (!isTauriDesktop()) return
+	const { getCurrentWindow, UserAttentionType } =
+		await import('@tauri-apps/api/window')
+	await getCurrentWindow().requestUserAttention(UserAttentionType.Critical)
+}
+
+export async function clearCurrentWindowAttention(): Promise<void> {
+	if (!isTauriDesktop()) return
+	const { getCurrentWindow } = await import('@tauri-apps/api/window')
+	await getCurrentWindow().requestUserAttention(null)
+}
+
+export async function playSystemFailureSound(): Promise<void> {
+	await invokeDesktop<void>('play_failure_sound')
+}

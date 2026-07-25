@@ -1,5 +1,5 @@
 use super::{storage, EngineError};
-use crate::contracts::{Operation, UpdateConflict, UpdatePlan};
+use crate::contracts::{Anchor, Operation, UpdateConflict, UpdatePlan};
 use sha2::{Digest, Sha256};
 use std::{
     collections::HashMap,
@@ -15,6 +15,7 @@ pub(super) fn preflight_conflicts(
     state: &storage::ClientState,
     resolutions: &HashMap<String, String>,
     bytes: &[u8],
+    anchors: &[Anchor],
 ) -> Result<Vec<UpdateConflict>, EngineError> {
     let mut output = Vec::new();
     let mut archive = ZipArchive::new(Cursor::new(bytes))
@@ -42,6 +43,9 @@ pub(super) fn preflight_conflicts(
                 continue;
             }
             if target_path.is_file() {
+                if target_matches_verified_anchor(game, target, anchors)? {
+                    continue;
+                }
                 output.push(UpdateConflict {
                     operation_id: id.clone(),
                     target: target.clone(),
@@ -107,6 +111,23 @@ pub(super) fn preflight_conflicts(
     Ok(output)
 }
 
+fn target_matches_verified_anchor(
+    game: &Path,
+    target: &str,
+    anchors: &[Anchor],
+) -> Result<bool, EngineError> {
+    let target_path = storage::safe_join(game, target)?;
+    for anchor in anchors {
+        if storage::safe_join(game, &anchor.path)? == target_path
+            && target_path.is_file()
+            && storage::sha256(&target_path)?.eq_ignore_ascii_case(&anchor.sha256)
+        {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
 pub(super) fn apply_transaction(
     game: &Path,
     plan: &UpdatePlan,
@@ -148,6 +169,24 @@ pub(super) fn apply_transaction(
         .push(plan.migration_id.clone());
     client_state.unfinished_transaction = None;
     storage::save_state(game, client_state)
+}
+
+pub(super) fn recover_unfinished_transaction(game: &Path) -> Result<bool, EngineError> {
+    let mut client_state = storage::load_client_state(game)?;
+    let Some(transaction_id) = client_state.unfinished_transaction.clone() else {
+        return Ok(false);
+    };
+    let tx_root = game
+        .join(".minecraft")
+        .join(".hydcraft")
+        .join("backups")
+        .join(transaction_id);
+    if tx_root.exists() {
+        rollback(game, &tx_root)?;
+    }
+    client_state.unfinished_transaction = None;
+    storage::save_state(game, &client_state)?;
+    Ok(true)
 }
 
 fn apply_operation(
