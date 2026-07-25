@@ -93,3 +93,29 @@ pub fn spawn_update(
 ) {
     tauri::async_runtime::spawn(execute_update(state, selected_version, source_key));
 }
+
+pub async fn execute_client_install(state: UpdaterState, version: String, mode: String) {
+    match engine::install_client_version(&state, &version, &mode).await {
+        Ok(()) => {
+            *state.selected_version.write().await = Some(version.clone());
+            state
+                .set_status_with_versions(
+                    "ready",
+                    "客户端完整包已覆盖完成",
+                    None,
+                    Some(version.clone()),
+                    Some(version),
+                )
+                .await;
+        }
+        Err(error) => {
+            state
+                .set_failure_status(&format!("客户端完整包覆盖失败：{error}"), "update")
+                .await;
+        }
+    }
+}
+
+pub fn spawn_client_install(state: UpdaterState, version: String, mode: String) {
+    tauri::async_runtime::spawn(execute_client_install(state, version, mode));
+}

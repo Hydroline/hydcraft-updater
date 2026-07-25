@@ -1,7 +1,10 @@
 <script setup lang="ts">
 import { ref } from 'vue'
+import dayjs from 'dayjs'
+import SkeletonImage from '../common/SkeletonImage.vue'
 import type {
 	ClientDetailsKind,
+	ClientInstallMode,
 	ClientVersionOption,
 	Translator,
 } from '../../types/updater'
@@ -14,19 +17,15 @@ defineProps<{
 
 const emit = defineEmits<{
 	openClientDetails: [payload: { version: string; detail: ClientDetailsKind }]
+	refresh: []
+	installClient: [payload: { version: string; mode: ClientInstallMode }]
 }>()
 
 const expandedVersion = ref<string | null>(null)
 
 function formatPublishedAt(value: string | null): string | null {
-	if (!value) return null
-	const date = new Date(value)
-	if (Number.isNaN(date.getTime())) return null
-	return new Intl.DateTimeFormat(undefined, {
-		year: 'numeric',
-		month: 'short',
-		day: 'numeric',
-	}).format(date)
+	if (!value || !dayjs(value).isValid()) return null
+	return dayjs(value).format('YYYY 年 M 月 D 日')
 }
 
 function environmentTags(option: ClientVersionOption): string[] {
@@ -45,22 +44,35 @@ function toggleVersion(version: string): void {
 function openClientDetails(version: string, detail: ClientDetailsKind): void {
 	emit('openClientDetails', { version, detail })
 }
+
+function canInstall(option: ClientVersionOption): boolean {
+	return Boolean(
+		option.fullPackage &&
+		(option.isLatest || option.fullPackage.packageKey.includes('/base/')),
+	)
+}
 </script>
 
 <template>
 	<section
 		v-if="!clientVersions.length"
-		class="flex flex-1 items-center justify-center p-6 text-center"
+		class="relative flex flex-1 items-center justify-center p-6 text-center"
 	>
+		<UButton
+			color="neutral"
+			variant="link"
+			icon="i-lucide-refresh-cw"
+			class="absolute right-6 top-6"
+			@click="emit('refresh')"
+		>
+			{{ t('refresh') }}
+		</UButton>
 		<div class="flex max-w-sm flex-col items-center">
 			<UIcon
 				name="i-lucide-package"
 				class="size-12 text-slate-900/85 dark:text-white"
 			/>
-			<h2 class="mt-4 mx-1 text-xl text-slate-950 dark:text-white">
-				{{ t('clientTitle') }}
-			</h2>
-			<p class="mt-2 text-sm leading-6 text-slate-500 dark:text-slate-400">
+			<p class="mt-4 text-sm leading-6 text-slate-500 dark:text-slate-400">
 				{{ t('noData') }}
 			</p>
 		</div>
@@ -68,9 +80,15 @@ function openClientDetails(version: string, detail: ClientDetailsKind): void {
 	<section v-else class="flex flex-1 items-start justify-center px-6 pb-8 pt-6">
 		<div class="w-full max-w-3xl">
 			<div class="mb-3 flex flex-wrap items-center justify-between gap-3">
-				<h2 class="mx-1 text-xl text-slate-950 dark:text-white">
-					{{ t('clientTitle') }}
-				</h2>
+				<span />
+				<UButton
+					color="neutral"
+					variant="link"
+					icon="i-lucide-refresh-cw"
+					@click="emit('refresh')"
+				>
+					{{ t('refresh') }}
+				</UButton>
 			</div>
 			<div class="flex flex-col gap-3">
 				<article
@@ -84,19 +102,70 @@ function openClientDetails(version: string, detail: ClientDetailsKind): void {
 						@click="toggleVersion(option.version)"
 					>
 						<div class="min-w-0">
-							<p class="text-[15px] text-slate-700 dark:text-slate-200">
+							<div class="text-[15px] text-slate-700 dark:text-slate-200">
 								{{ option.version }}
-							</p>
-							<p
+							</div>
+
+							<div
 								v-if="formatPublishedAt(option.publishedAt)"
-								class="text-xs text-slate-500 dark:text-slate-400"
+								class="mt-1 flex min-w-0 items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400"
 							>
-								{{
-									t('clientPublishedAt', {
-										date: formatPublishedAt(option.publishedAt)!,
-									})
-								}}
-							</p>
+								<SkeletonImage
+									v-if="option.publisher?.avatarUrl"
+									:src="option.publisher.avatarUrl"
+									:alt="
+										option.publisher.displayName || option.publisher.username
+									"
+									image-class="size-5 rounded-full object-cover"
+									class="size-5 shrink-0"
+								/>
+								<p class="min-w-0 truncate leading-[normal]">
+									{{
+										option.publisher
+											? t('clientPublishedByAt', {
+													username:
+														option.publisher.displayName ||
+														option.publisher.username,
+													date: formatPublishedAt(option.publishedAt)!,
+												})
+											: t('clientPublishedAt', {
+													date: formatPublishedAt(option.publishedAt)!,
+												})
+									}}
+								</p>
+							</div>
+
+							<div
+								v-if="(option.contributors?.length ?? 0) > 0"
+								class="mt-2 flex min-w-0 items-center text-xs text-slate-500 dark:text-slate-400"
+							>
+								<div class="flex shrink-0">
+									<SkeletonImage
+										v-for="(contributor, index) in option.contributors"
+										:key="contributor.hydrolineId"
+										:src="contributor.avatarUrl || ''"
+										:alt="contributor.displayName || contributor.username"
+										image-class="size-5 rounded-full object-cover dark:border-slate-900"
+										:class="index === 0 ? 'size-5' : '-ml-2 size-5'"
+									/>
+								</div>
+								<p class="ml-1.5 truncate">
+									{{
+										t(
+											option.contributors?.length === 1
+												? 'clientContributor'
+												: 'clientContributors',
+											{
+												username:
+													option.contributors?.[0]?.displayName ||
+													option.contributors?.[0]?.username ||
+													'',
+												count: option.contributors?.length ?? 0,
+											},
+										)
+									}}
+								</p>
+							</div>
 							<div class="mt-2 flex flex-wrap gap-2">
 								<UBadge
 									v-for="environment in environmentTags(option)"
@@ -134,7 +203,50 @@ function openClientDetails(version: string, detail: ClientDetailsKind): void {
 							v-if="expandedVersion === option.version"
 							class="client-details-content border-t border-slate-200 dark:border-slate-800"
 						>
-							<div class="grid grid-cols-2 gap-3 px-5 py-4">
+							<div
+								class="grid gap-3 px-5 py-4"
+								:class="canInstall(option) ? 'grid-cols-3' : 'grid-cols-2'"
+							>
+								<UPopover v-if="canInstall(option)">
+									<UButton
+										color="primary"
+										variant="soft"
+										class="justify-center"
+										icon="i-lucide-download"
+									>
+										{{ t('clientDownloadOverwrite') }}
+									</UButton>
+									<template #content>
+										<div class="flex w-52 flex-col gap-1 p-2">
+											<UButton
+												color="neutral"
+												variant="ghost"
+												class="justify-start"
+												@click="
+													emit('installClient', {
+														version: option.version,
+														mode: 'full',
+													})
+												"
+											>
+												{{ t('clientInstallFull') }}
+											</UButton>
+											<UButton
+												color="neutral"
+												variant="ghost"
+												class="justify-start"
+												@click="
+													emit('installClient', {
+														version: option.version,
+														mode: 'mods',
+													})
+												"
+											>
+												{{ t('clientInstallMods') }}
+											</UButton>
+										</div>
+									</template>
+								</UPopover>
 								<UButton
 									color="neutral"
 									variant="soft"

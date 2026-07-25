@@ -39,6 +39,48 @@ pub struct ClientVersionOption {
     pub mod_count: u32,
     #[serde(default)]
     pub mods: Vec<ClientMod>,
+    #[serde(default)]
+    pub is_base: bool,
+    #[serde(default)]
+    pub publisher: Option<ClientReleasePerson>,
+    #[serde(default)]
+    pub contributors: Vec<ClientReleasePerson>,
+    #[serde(default)]
+    pub full_package: Option<ClientFullPackage>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClientReleasePerson {
+    pub hydroline_id: String,
+    pub username: String,
+    #[serde(default)]
+    pub display_name: Option<String>,
+    #[serde(default)]
+    pub avatar_url: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClientFullPackage {
+    pub package_key: String,
+    pub package_sha256: String,
+    pub package_size: u64,
+    pub signature: String,
+    #[serde(default)]
+    pub signature_payload: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClientFullPackageDownload {
+    pub package_key: String,
+    pub package_sha256: String,
+    pub package_size: u64,
+    pub signature: String,
+    #[serde(default)]
+    pub signature_payload: Option<String>,
+    pub sources: Vec<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -58,7 +100,10 @@ pub struct ClientMod {
 pub struct DownloadSource {
     pub key: String,
     pub label: String,
+    pub base_url: String,
     pub priority: i32,
+    #[serde(default)]
+    pub is_default: bool,
     pub requires_login: bool,
     pub available: bool,
     #[serde(default)]
@@ -122,6 +167,7 @@ pub async fn apply_next(
     };
     storage::verify_anchors(&state.game_dir, anchors)?;
     let bytes = network::download_package(state, &migration).await?;
+    state.set_operation_status("verifying", None, None).await;
     package::verify_package(&bytes, &migration)?;
     let console_plan = package::plan_from_envelope(&migration);
     // Console 迁移记录是执行计划的权威来源，ZIP 内计划只用于兼容性校验。
@@ -148,6 +194,7 @@ pub async fn apply_next(
     if !conflicts.is_empty() {
         return Err(EngineError::Conflicts(conflicts));
     }
+    state.set_operation_status("applying", None, None).await;
     transaction::apply_transaction(
         &state.game_dir,
         &extracted,
@@ -156,4 +203,30 @@ pub async fn apply_next(
         &resolutions,
     )?;
     Ok(Some(migration.to_version))
+}
+
+pub async fn install_client_version(
+    state: &UpdaterState,
+    version: &str,
+    mode: &str,
+) -> Result<(), EngineError> {
+    if !matches!(mode, "full" | "mods") {
+        return Err(EngineError::Message("客户端覆盖模式无效".into()));
+    }
+    let release = list_versions(state)
+        .await?
+        .into_iter()
+        .find(|release| release.version == version)
+        .ok_or_else(|| EngineError::Message("客户端版本不存在".into()))?;
+    let full_package = release
+        .full_package
+        .ok_or_else(|| EngineError::Message("此客户端版本没有可用完整包".into()))?;
+    if !release.is_latest && !full_package.package_key.contains("/base/") {
+        return Err(EngineError::Message("此客户端版本不支持完整包覆盖".into()));
+    }
+    let source_key = state.selected_source.read().await.clone();
+    let package = network::fetch_full_package(state, version, source_key.as_deref()).await?;
+    let bytes = network::download_full_package(state, &package).await?;
+    state.set_operation_status("verifying", None, None).await;
+    transaction::install_base_package(state, &bytes, &release.version, mode).await
 }

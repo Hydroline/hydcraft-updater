@@ -28,6 +28,9 @@ const {
 	openProfile,
 	openExternalUrl,
 	openClientDetails,
+	installClientVersion,
+	refreshClientVersions,
+	refreshSources,
 	retryUpdate,
 	phaseSubtitle,
 	phaseTitle,
@@ -42,6 +45,8 @@ const {
 	selectedSource,
 	showProcessSpinner,
 	sourceItems,
+	sources,
+	sourceTesting,
 	startLogin,
 	status,
 	t,
@@ -121,6 +126,8 @@ const hasAvailableUpdate = computed(() => {
 						:selected-source="selectedSource"
 						:show-process-spinner="showProcessSpinner"
 						:source-items="sourceItems"
+						:sources="sources"
+						:source-testing="sourceTesting"
 						:status="status"
 						:tab="tab"
 						:t="t"
@@ -131,6 +138,9 @@ const hasAvailableUpdate = computed(() => {
 						@open-client-details="
 							openClientDetails($event.version, $event.detail)
 						"
+						@refresh-clients="refreshClientVersions"
+						@refresh-sources="refreshSources"
+						@install-client="installClientVersion($event.version, $event.mode)"
 						@recheck-update="recheckUpdate"
 						@resolve-conflicts="resolveConflicts"
 						@select-conflict-resolution="selectConflictResolution"

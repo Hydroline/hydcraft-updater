@@ -70,7 +70,7 @@ function selectLocale(value: LocaleCode): void {
 				v-if="hasAvailableUpdate"
 				color="primary"
 				variant="soft"
-				class="mt-1 rounded-full px-3 py-1 text-xs font-medium"
+				class="mt-2.5 rounded-full px-3 py-1 text-xs font-medium"
 			>
 				{{ t('updateAvailable') }}
 			</UBadge>

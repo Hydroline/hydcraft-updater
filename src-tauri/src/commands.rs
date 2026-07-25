@@ -204,10 +204,37 @@ pub async fn begin_update(state: State<'_, UpdaterState>) -> Result<(), String> 
 }
 
 #[tauri::command]
+pub async fn install_client_version(
+    version: String,
+    mode: String,
+    state: State<'_, UpdaterState>,
+) -> Result<(), String> {
+    state
+        .set_status_with_versions(
+            "updating",
+            "正在下载完整客户端包",
+            None,
+            None,
+            Some(version.clone()),
+        )
+        .await;
+    lifecycle::spawn_client_install(state.inner().clone(), version, mode);
+    Ok(())
+}
+
+#[tauri::command]
 pub async fn recheck_update(state: State<'_, UpdaterState>) -> Result<(), String> {
-    let Some(version) = state.selected_version.read().await.clone() else {
+    let inspected_version = engine::inspect_client_version(&state.game_dir)
+        .ok()
+        .flatten();
+    let version = match inspected_version {
+        Some(version) => Some(version),
+        None => state.selected_version.read().await.clone(),
+    };
+    let Some(version) = version else {
         return Ok(());
     };
+    *state.selected_version.write().await = Some(version.clone());
     state
         .set_status("checking-update", "正在检查客户端更新", None)
         .await;

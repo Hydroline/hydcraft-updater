@@ -7,6 +7,8 @@ import UpdaterUpgrade from './UpdaterUpgrade.vue'
 import type {
 	ClientVersionOption,
 	ClientDetailsKind,
+	ClientInstallMode,
+	DownloadSource,
 	SelectOption,
 	TabKey,
 	Translator,
@@ -22,6 +24,8 @@ const props = defineProps<{
 	conflicts: UpdateConflict[]
 	currentClientVersion: string | null
 	context: UpdaterContext
+	sources: DownloadSource[]
+	sourceTesting: boolean
 	isBootstrap: boolean
 	loginBusy: boolean
 	phaseSubtitle: string
@@ -40,12 +44,15 @@ const emit = defineEmits<{
 	launchClient: []
 	login: []
 	openClientDetails: [payload: { version: string; detail: ClientDetailsKind }]
+	refreshClients: []
+	installClient: [payload: { version: string; mode: ClientInstallMode }]
 	openExternalUrl: [url: string]
 	recheckUpdate: []
 	resolveConflicts: []
 	retryUpdate: []
 	selectConflictResolution: [operationId: string, value: string]
 	selectSource: [value: string | undefined]
+	refreshSources: []
 }>()
 </script>
 
@@ -67,6 +74,8 @@ const emit = defineEmits<{
 				:selected-source="props.selectedSource"
 				:show-process-spinner="props.showProcessSpinner"
 				:source-items="props.sourceItems"
+				:sources="props.sources"
+				:source-testing="props.sourceTesting"
 				:status="props.status"
 				:t="props.t"
 				@begin-update="emit('beginUpdate')"
@@ -78,6 +87,7 @@ const emit = defineEmits<{
 					emit('selectConflictResolution', $event.operationId, $event.value)
 				"
 				@select-source="emit('selectSource', $event)"
+				@refresh-sources="emit('refreshSources')"
 				@retry-update="emit('retryUpdate')"
 			/>
 
@@ -88,8 +98,11 @@ const emit = defineEmits<{
 				:phase-title="props.phaseTitle"
 				:selected-source="props.selectedSource"
 				:source-items="props.sourceItems"
+				:sources="props.sources"
+				:source-testing="props.sourceTesting"
 				:t="props.t"
 				@select-source="emit('selectSource', $event)"
+				@refresh-sources="emit('refreshSources')"
 			/>
 
 			<UpdaterClient
@@ -98,6 +111,8 @@ const emit = defineEmits<{
 				:current-client-version="props.currentClientVersion"
 				:t="props.t"
 				@open-client-details="emit('openClientDetails', $event)"
+				@refresh="emit('refreshClients')"
+				@install-client="emit('installClient', $event)"
 			/>
 
 			<UpdaterAddons v-else-if="props.tab === 'addons'" :t="props.t" />

@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import dayjs from 'dayjs'
 import { OverlayScrollbarsComponent } from 'overlayscrollbars-vue'
 import MarkdownContent from '../common/MarkdownContent.vue'
+import SkeletonImage from '../common/SkeletonImage.vue'
 import { HYDCRAFT_SCROLLBAR_OPTIONS } from '../../utils/scrollbar'
 import type {
 	ClientVersionOption,
@@ -69,6 +71,30 @@ const downloadPercent = computed(() => {
 		Math.max(0, (progress.downloadedBytes / progress.totalBytes) * 100),
 	)
 })
+const isCacheVerification = computed(
+	() => downloadProgress.value?.source === 'cache',
+)
+const operationPercent = computed(() => {
+	const operation = props.status.operation
+	if (!operation?.totalItems) return null
+	return Math.min(
+		100,
+		Math.max(0, ((operation.completedItems ?? 0) / operation.totalItems) * 100),
+	)
+})
+
+const operationLabel = computed(() => {
+	switch (props.status.operation?.stage) {
+		case 'verifying':
+			return props.t('operationVerifying')
+		case 'extracting':
+			return props.t('operationExtracting')
+		case 'applying':
+			return props.t('operationApplying')
+		default:
+			return ''
+	}
+})
 
 function formatBytes(bytes: number): string {
 	if (!Number.isFinite(bytes) || bytes <= 0) return '0 B'
@@ -84,6 +110,35 @@ function formatBytes(bytes: number): string {
 
 function formatSpeed(bytesPerSecond: number): string {
 	return `${formatBytes(bytesPerSecond)}/s`
+}
+
+function formatReleaseDate(value: string | null): string | null {
+	if (!value || !dayjs(value).isValid()) return null
+	return dayjs(value).format('YYYY 年 M 月 D 日')
+}
+
+function formatRelativeReleaseDate(value: string | null): string | null {
+	if (!value || !dayjs(value).isValid()) return null
+	const date = dayjs(value)
+	const now = dayjs()
+	const years = now.diff(date, 'year')
+	const afterYears = date.add(years, 'year')
+	const months = now.diff(afterYears, 'month')
+	const days = Math.max(0, now.diff(afterYears.add(months, 'month'), 'day'))
+	return props.t('releaseRelativeDate', {
+		years: years ? props.t('releaseYears', { value: years }) : '',
+		months: months ? props.t('releaseMonths', { value: months }) : '',
+		days: props.t('releaseDays', { value: days }),
+	})
+}
+
+function environmentTags(option: ClientVersionOption): string[] {
+	return (option.apiVersion ?? '')
+		.split('/')
+		.map((item, index) =>
+			index === 0 ? item.trim().replace(/^Minecraft\s+/i, '') : item.trim(),
+		)
+		.filter(Boolean)
 }
 
 function conflictOptions(conflict: UpdateConflict): SelectOption[] {
@@ -161,66 +216,187 @@ function selectSource(value: string): void {
 						}}
 					</p>
 
+					<Transition name="progress-panel" mode="out-in">
+						<div
+							v-if="
+								status.phase === 'updating' &&
+								downloadProgress &&
+								!isCacheVerification
+							"
+							key="download"
+							class="mt-6 w-full rounded-lg border border-slate-200 bg-white/80 p-4 text-left dark:border-slate-800 dark:bg-slate-900/70"
+						>
+							<div class="flex items-center justify-between gap-3 text-xs">
+								<span class="font-medium text-slate-700 dark:text-slate-200">
+									{{ t('downloadProgress') }}
+								</span>
+								<span class="tabular-nums text-slate-500 dark:text-slate-400">
+									{{ downloadPercent.toFixed(1) }}%
+								</span>
+							</div>
+							<div
+								class="mt-2 h-2 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800"
+							>
+								<div
+									class="h-full rounded-full bg-primary-500 transition-[width]"
+									:style="{ width: downloadPercent + '%' }"
+								/>
+							</div>
+							<div class="mt-4 grid grid-cols-2 gap-3 text-xs">
+								<div>
+									<p class="text-slate-500 dark:text-slate-400">
+										{{ t('downloadSize') }}
+									</p>
+									<p class="mt-1 font-medium tabular-nums">
+										{{ formatBytes(downloadProgress.downloadedBytes) }} /
+										{{ formatBytes(downloadProgress.totalBytes) }}
+									</p>
+								</div>
+								<div>
+									<p class="text-slate-500 dark:text-slate-400">
+										{{ t('downloadSpeed') }}
+									</p>
+									<p class="mt-1 font-medium tabular-nums">
+										{{ formatSpeed(downloadProgress.bytesPerSecond) }}
+									</p>
+								</div>
+								<div>
+									<p class="text-slate-500 dark:text-slate-400">
+										{{ t('downloadLatency') }}
+									</p>
+									<p class="mt-1 font-medium tabular-nums">
+										{{ downloadProgress.latencyMs }} ms
+									</p>
+								</div>
+								<div>
+									<p class="text-slate-500 dark:text-slate-400">
+										{{ t('downloadSource') }}
+									</p>
+									<p
+										class="mt-1 truncate font-medium"
+										:title="
+											downloadProgress.sourceUrl ?? downloadProgress.source
+										"
+									>
+										{{ downloadProgress.source
+										}}{{
+											downloadProgress.sourceUrl
+												? ` (${downloadProgress.sourceUrl})`
+												: ''
+										}}
+									</p>
+								</div>
+							</div>
+							<p class="mt-3 text-xs text-slate-500 dark:text-slate-400">
+								{{
+									downloadProgress.resumed
+										? t('downloadResumed')
+										: t('downloadFresh')
+								}}
+							</p>
+						</div>
+						<div
+							v-else-if="
+								status.phase === 'updating' &&
+								isCacheVerification &&
+								downloadProgress
+							"
+							key="cache"
+							class="mt-6 w-full rounded-lg border border-slate-200 bg-white/80 p-4 text-left dark:border-slate-800 dark:bg-slate-900/70"
+						>
+							<div class="flex items-center justify-between gap-3 text-xs">
+								<span class="font-medium text-slate-700 dark:text-slate-200">{{
+									t('cacheVerificationProgress')
+								}}</span
+								><span class="tabular-nums text-slate-500 dark:text-slate-400"
+									>{{ downloadPercent.toFixed(1) }}%</span
+								>
+							</div>
+							<div
+								class="mt-2 h-2 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800"
+							>
+								<div
+									class="h-full rounded-full bg-primary-500 transition-[width]"
+									:style="{ width: downloadPercent + '%' }"
+								/>
+							</div>
+							<p class="mt-3 text-xs text-slate-500 dark:text-slate-400">
+								{{
+									t('cacheVerifiedSize', {
+										completed: formatBytes(downloadProgress.downloadedBytes),
+										total: formatBytes(downloadProgress.totalBytes),
+									})
+								}}
+							</p>
+						</div>
+						<div
+							v-else-if="status.phase === 'updating' && status.operation"
+							key="operation"
+							class="mt-6 w-full rounded-lg border border-slate-200 bg-white/80 p-4 text-left dark:border-slate-800 dark:bg-slate-900/70"
+						>
+							<div class="flex items-center justify-between gap-3 text-xs">
+								<span class="font-medium text-slate-700 dark:text-slate-200">{{
+									operationLabel
+								}}</span
+								><span
+									v-if="operationPercent != null"
+									class="tabular-nums text-slate-500 dark:text-slate-400"
+									>{{ operationPercent.toFixed(1) }}%</span
+								>
+							</div>
+							<div
+								v-if="operationPercent != null"
+								class="mt-2 h-2 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800"
+							>
+								<div
+									class="h-full rounded-full bg-primary-500 transition-[width]"
+									:style="{ width: operationPercent + '%' }"
+								/>
+							</div>
+							<p class="mt-3 text-xs text-slate-500 dark:text-slate-400">
+								{{
+									status.operation.totalItems != null
+										? t('operationItems', {
+												completed: status.operation.completedItems ?? 0,
+												total: status.operation.totalItems,
+											})
+										: t('operationInProgress')
+								}}
+							</p>
+						</div>
+					</Transition>
 					<div
-						v-if="status.phase === 'updating' && downloadProgress"
-						class="mt-6 w-full rounded-lg border border-slate-200 bg-white/80 p-4 text-left shadow-sm dark:border-slate-800 dark:bg-slate-900/70"
+						v-if="status.operation"
+						class="hidden mt-6 w-full rounded-lg border border-slate-200 bg-white/80 p-4 text-left dark:border-slate-800 dark:bg-slate-900/70"
 					>
 						<div class="flex items-center justify-between gap-3 text-xs">
 							<span class="font-medium text-slate-700 dark:text-slate-200">
-								{{ t('downloadProgress') }}
+								{{ operationLabel }}
 							</span>
-							<span class="tabular-nums text-slate-500 dark:text-slate-400">
-								{{ downloadPercent.toFixed(1) }}%
+							<span
+								v-if="operationPercent != null"
+								class="tabular-nums text-slate-500 dark:text-slate-400"
+							>
+								{{ operationPercent.toFixed(1) }}%
 							</span>
 						</div>
 						<div
+							v-if="operationPercent != null"
 							class="mt-2 h-2 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800"
 						>
 							<div
 								class="h-full rounded-full bg-primary-500 transition-[width]"
-								:style="{ width: downloadPercent + '%' }"
+								:style="{ width: operationPercent + '%' }"
 							/>
-						</div>
-						<div class="mt-4 grid grid-cols-2 gap-3 text-xs">
-							<div>
-								<p class="text-slate-500 dark:text-slate-400">
-									{{ t('downloadSize') }}
-								</p>
-								<p class="mt-1 font-medium tabular-nums">
-									{{ formatBytes(downloadProgress.downloadedBytes) }} /
-									{{ formatBytes(downloadProgress.totalBytes) }}
-								</p>
-							</div>
-							<div>
-								<p class="text-slate-500 dark:text-slate-400">
-									{{ t('downloadSpeed') }}
-								</p>
-								<p class="mt-1 font-medium tabular-nums">
-									{{ formatSpeed(downloadProgress.bytesPerSecond) }}
-								</p>
-							</div>
-							<div>
-								<p class="text-slate-500 dark:text-slate-400">
-									{{ t('downloadLatency') }}
-								</p>
-								<p class="mt-1 font-medium tabular-nums">
-									{{ downloadProgress.latencyMs }} ms
-								</p>
-							</div>
-							<div>
-								<p class="text-slate-500 dark:text-slate-400">
-									{{ t('downloadSource') }}
-								</p>
-								<p class="mt-1 truncate font-medium">
-									{{ downloadProgress.source }}
-								</p>
-							</div>
 						</div>
 						<p class="mt-3 text-xs text-slate-500 dark:text-slate-400">
 							{{
-								downloadProgress.resumed
-									? t('downloadResumed')
-									: t('downloadFresh')
+								status.operation.totalItems != null
+									? t('operationItems', {
+											completed: status.operation.completedItems ?? 0,
+											total: status.operation.totalItems,
+										})
+									: t('operationInProgress')
 							}}
 						</p>
 					</div>
@@ -283,32 +459,96 @@ function selectSource(value: string): void {
 							v-if="updateCurrentVersion && updateTargetVersion"
 							class="flex items-center justify-center gap-3 text-sm"
 						>
-							<UBadge color="success" variant="soft" size="lg">
+							<UBadge color="warning" variant="soft" size="lg">
 								{{ updateCurrentVersion }}
 							</UBadge>
 							<UIcon
 								name="i-lucide-arrow-right"
 								class="size-4 text-slate-400 dark:text-slate-500"
 							/>
-							<UBadge color="primary" variant="soft" size="lg">
+							<UBadge color="success" variant="soft" size="lg">
 								{{ updateTargetVersion }}
 							</UBadge>
 						</div>
-						<div
-							v-if="updateRelease?.changelog"
-							class="overflow-hidden rounded-lg border border-slate-200 bg-slate-50 text-left dark:border-slate-800 dark:bg-slate-900"
+						<OverlayScrollbarsComponent
+							v-if="updateRelease"
+							class="h-44 overflow-hidden rounded-lg border border-slate-200 bg-slate-50 text-left dark:border-slate-800 dark:bg-slate-900"
+							:options="HYDCRAFT_SCROLLBAR_OPTIONS"
+							defer
 						>
-							<OverlayScrollbarsComponent
-								class="h-36"
-								:options="HYDCRAFT_SCROLLBAR_OPTIONS"
-								defer
+							<div
+								class="flex flex-wrap items-center gap-1.5 px-4 py-3 text-xs text-slate-600 dark:text-slate-300"
 							>
+								<span v-if="formatReleaseDate(updateRelease.publishedAt)">
+									{{
+										t('clientReleaseMeta', {
+											version: updateRelease.version,
+											relative: formatRelativeReleaseDate(
+												updateRelease.publishedAt,
+											)!,
+											date: formatReleaseDate(updateRelease.publishedAt)!,
+										})
+									}}
+								</span>
+							</div>
+							<div v-if="updateRelease.changelog">
 								<MarkdownContent
 									:content="updateRelease.changelog"
-									class="px-4 py-3 text-xs leading-5 text-slate-700 dark:text-slate-200"
+									class="px-4 pb-3 text-xs leading-5 text-slate-700 dark:text-slate-200"
 								/>
-							</OverlayScrollbarsComponent>
-						</div>
+							</div>
+							<div class="px-4 pb-4 text-xs text-slate-500 dark:text-slate-400">
+								<div
+									v-if="updateRelease.publisher"
+									class="flex items-center gap-1.5"
+								>
+									<SkeletonImage
+										v-if="updateRelease.publisher.avatarUrl"
+										:src="updateRelease.publisher.avatarUrl"
+										:alt="
+											updateRelease.publisher.displayName ||
+											updateRelease.publisher.username
+										"
+										image-class="size-5 rounded-full object-cover"
+										class="size-5 shrink-0"
+									/>
+									<span>{{
+										t('clientPublishedByAt', {
+											username:
+												updateRelease.publisher.displayName ||
+												updateRelease.publisher.username,
+											date: formatReleaseDate(updateRelease.publishedAt) || '',
+										})
+									}}</span>
+								</div>
+								<div
+									v-if="updateRelease.contributors?.length"
+									class="mt-2 flex items-center gap-1.5"
+								>
+									<div class="flex shrink-0">
+										<SkeletonImage
+											v-for="(contributor, index) in updateRelease.contributors"
+											:key="contributor.hydrolineId"
+											:src="contributor.avatarUrl || ''"
+											:alt="contributor.displayName || contributor.username"
+											image-class="size-5 rounded-full object-cover dark:border-slate-900"
+											:class="index === 0 ? 'size-5' : '-ml-2 size-5'"
+										/>
+									</div>
+									<span
+										>{{
+											updateRelease.contributors[0]?.displayName ||
+											updateRelease.contributors[0]?.username
+										}}{{
+											t('clientContributors', {
+												username: '',
+												count: updateRelease.contributors.length,
+											})
+										}}</span
+									>
+								</div>
+							</div>
+						</OverlayScrollbarsComponent>
 						<div class="flex">
 							<UButton
 								color="primary"
@@ -336,7 +576,7 @@ function selectSource(value: string): void {
 										{{ selectedSourceLabel }}
 									</UButton>
 									<template #content>
-										<div class="flex w-40 flex-col gap-1 p-2">
+										<div class="flex w-44 flex-col gap-1 p-2">
 											<UButton
 												v-for="source in sourceItems"
 												:key="source.value"
@@ -352,9 +592,21 @@ function selectSource(value: string): void {
 												}"
 												@click="selectSource(source.value)"
 											>
-												<span>{{ source.label }}</span>
 												<UBadge
-													v-if="source.latencyMs != null"
+													color="neutral"
+													variant="soft"
+													size="xs"
+													class="shrink-0"
+												>
+													{{
+														source.latencyMs == null
+															? t('sourceLatencyUnknown')
+															: t('sourceLatency', { value: source.latencyMs })
+													}}
+												</UBadge>
+												<span class="min-w-0 truncate">{{ source.label }}</span>
+												<UBadge
+													v-if="false"
 													color="neutral"
 													variant="soft"
 													size="xs"
@@ -416,25 +668,27 @@ function selectSource(value: string): void {
 						</UButton>
 					</div>
 					<div
-						v-if="['ready', 'up-to-date'].includes(status.phase) && isBootstrap"
-						class="relative mt-6 flex w-full flex-col items-center"
+						v-if="status.phase === 'ready'"
+						class="relative mt-6 flex w-full justify-center gap-3"
 					>
 						<UButton
 							color="primary"
 							variant="soft"
-							class="min-w-44 justify-center"
+							class="min-w-36 justify-center"
+							@click="emit('recheckUpdate')"
+						>
+							{{ t('continueCheckingUpdates') }}
+						</UButton>
+						<UButton
+							v-if="isBootstrap"
+							color="primary"
+							class="min-w-36 justify-center"
 							@click="emit('launchClient')"
 						>
 							{{ t('launchNow') }}
 						</UButton>
 					</div>
-					<div
-						v-if="
-							status.phase === 'unknown-client' ||
-							(status.phase === 'up-to-date' && !isBootstrap)
-						"
-						class="mt-6"
-					>
+					<div v-if="status.phase === 'unknown-client'" class="mt-6">
 						<UButton
 							color="primary"
 							variant="soft"
@@ -463,3 +717,19 @@ function selectSource(value: string): void {
 		</div>
 	</section>
 </template>
+
+<style scoped>
+.progress-panel-enter-active,
+.progress-panel-leave-active {
+	overflow: hidden;
+	transition:
+		height 180ms ease,
+		opacity 180ms ease;
+}
+
+.progress-panel-enter-from,
+.progress-panel-leave-to {
+	height: 0;
+	opacity: 0;
+}
+</style>

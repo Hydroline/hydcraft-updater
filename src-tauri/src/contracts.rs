@@ -155,15 +155,25 @@ pub struct UpdaterStatus {
     pub current_version: Option<String>,
     pub target_version: Option<String>,
     pub download: Option<DownloadProgress>,
+    pub operation: Option<OperationProgress>,
 }
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DownloadProgress {
     pub source: String,
+    pub source_url: Option<String>,
     pub downloaded_bytes: u64,
     pub total_bytes: u64,
     pub bytes_per_second: u64,
     pub latency_ms: u64,
     pub resumed: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OperationProgress {
+    pub stage: String,
+    pub completed_items: Option<u64>,
+    pub total_items: Option<u64>,
 }

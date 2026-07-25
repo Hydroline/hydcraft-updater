@@ -29,14 +29,17 @@ pub fn hide_version_window(app: AppHandle) -> Result<(), String> {
 pub fn open_client_details_window(app: AppHandle) -> Result<(), String> {
     if let Some(window) = app.get_webview_window("client-details") {
         window
-            .eval("window.location.reload()")
-            .map_err(|_| "CLIENT_DETAILS_WINDOW_RELOAD_FAILED".to_string())?;
+            .unminimize()
+            .map_err(|_| "CLIENT_DETAILS_WINDOW_RESTORE_FAILED".to_string())?;
         window
             .show()
             .map_err(|_| "CLIENT_DETAILS_WINDOW_SHOW_FAILED".to_string())?;
-        return window
+        window
             .set_focus()
-            .map_err(|_| "CLIENT_DETAILS_WINDOW_FOCUS_FAILED".to_string());
+            .map_err(|_| "CLIENT_DETAILS_WINDOW_FOCUS_FAILED".to_string())?;
+        return window
+            .eval("window.location.reload()")
+            .map_err(|_| "CLIENT_DETAILS_WINDOW_RELOAD_FAILED".to_string());
     }
     let window =
         WebviewWindowBuilder::new(&app, "client-details", WebviewUrl::App("index.html".into()))

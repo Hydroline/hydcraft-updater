@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type {
 	SelectOption,
+	DownloadSource,
 	Translator,
 	UpdaterContext,
 } from '../../types/updater'
@@ -11,11 +12,14 @@ defineProps<{
 	phaseTitle: string
 	selectedSource: string
 	sourceItems: SelectOption[]
+	sources: DownloadSource[]
+	sourceTesting: boolean
 	t: Translator
 }>()
 
 const emit = defineEmits<{
 	selectSource: [value: string | undefined]
+	refreshSources: []
 }>()
 </script>
 
@@ -102,6 +106,61 @@ const emit = defineEmits<{
 							/>
 						</span>
 					</label>
+				</div>
+			</section>
+
+			<section class="grid gap-1.5">
+				<div class="mx-1 flex items-center justify-between">
+					<div class="text-xl text-slate-950 dark:text-white">
+						{{ t('sourceSpeedTestTitle') }}
+					</div>
+					<UButton
+						color="primary"
+						variant="link"
+						icon="i-lucide-gauge"
+						:loading="sourceTesting"
+						:disabled="sourceTesting"
+						@click="emit('refreshSources')"
+						>{{ t('sourceTest') }}</UButton
+					>
+				</div>
+				<div
+					class="divide-y divide-slate-200 rounded-lg border border-slate-200 bg-white dark:divide-slate-800 dark:border-slate-800 dark:bg-slate-900"
+				>
+					<div
+						v-for="source in sources"
+						:key="source.key"
+						class="flex items-center justify-between gap-4 p-4"
+					>
+						<div class="min-w-0">
+							<p
+								class="truncate text-[15px] text-slate-700 dark:text-slate-200"
+							>
+								{{ source.label }}
+							</p>
+						</div>
+						<div class="flex shrink-0 items-center gap-2">
+							<span
+								class="text-sm tabular-nums text-slate-600 dark:text-slate-300"
+							>
+								{{
+									source.latencyMs == null
+										? t('sourceLatencyUnknown')
+										: t('sourceLatency', { value: source.latencyMs })
+								}}
+							</span>
+							<UBadge
+								:color="source.available ? 'success' : 'neutral'"
+								variant="soft"
+							>
+								{{
+									source.available
+										? t('sourceAvailable')
+										: t('sourceUnavailable')
+								}}
+							</UBadge>
+						</div>
+					</div>
 				</div>
 			</section>
 		</div>

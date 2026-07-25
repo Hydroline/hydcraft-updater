@@ -13,15 +13,23 @@ export interface UpdaterStatus {
 	currentVersion?: string | null
 	targetVersion?: string | null
 	download?: DownloadProgress | null
+	operation?: OperationProgress | null
 }
 
 export interface DownloadProgress {
 	source: string
+	sourceUrl?: string | null
 	downloadedBytes: number
 	totalBytes: number
 	bytesPerSecond: number
 	latencyMs: number
 	resumed: boolean
+}
+
+export interface OperationProgress {
+	stage: 'verifying' | 'extracting' | 'applying'
+	completedItems?: number | null
+	totalItems?: number | null
 }
 
 export interface UpdateConflict {
@@ -46,12 +54,33 @@ export interface ClientVersionOption {
 	version: string
 	label: string
 	isLatest: boolean
+	isBase: boolean
 	publishedAt: string | null
 	changelog: string | null
 	apiVersion: string | null
 	modCount: number
 	mods: ClientMod[]
+	publisher?: ClientReleasePerson | null
+	contributors?: ClientReleasePerson[]
+	fullPackage?: ClientFullPackage | null
 }
+
+export interface ClientReleasePerson {
+	hydrolineId: string
+	username: string
+	displayName: string | null
+	avatarUrl: string | null
+}
+
+export interface ClientFullPackage {
+	packageKey: string
+	packageSha256: string
+	packageSize: number
+	signature: string
+	signaturePayload?: 'sha256'
+}
+
+export type ClientInstallMode = 'full' | 'mods'
 
 export interface ClientMod {
 	id: string
@@ -71,7 +100,9 @@ export interface DesktopIdentity {
 export interface DownloadSource {
 	key: string
 	label: string
+	baseUrl: string
 	priority: number
+	isDefault: boolean
 	requiresLogin: boolean
 	available: boolean
 	latencyMs: number | null
@@ -82,6 +113,8 @@ export interface SelectOption {
 	value: string
 	disabled?: boolean
 	latencyMs?: number | null
+	baseUrl?: string
+	available?: boolean
 }
 
 export type Translator = (

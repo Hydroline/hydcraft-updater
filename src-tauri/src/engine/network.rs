@@ -1,4 +1,4 @@
-use super::EngineError;
+use super::{ClientFullPackageDownload, EngineError};
 use crate::{
     contracts::{DownloadProgress, MigrationEnvelope},
     state::UpdaterState,
@@ -6,8 +6,8 @@ use crate::{
 use serde::de::DeserializeOwned;
 use sha2::{Digest, Sha256};
 use std::{
-    fs::{self, OpenOptions},
-    io::Write,
+    fs::{self, File, OpenOptions},
+    io::{Read, Write},
     path::PathBuf,
     time::{Duration, Instant},
 };
@@ -48,19 +48,79 @@ fn package_cache_paths(
     ))
 }
 
-fn cached_package(
+async fn cached_package(
+    state: &UpdaterState,
     path: &PathBuf,
     value: &MigrationEnvelope,
 ) -> Result<Option<Vec<u8>>, EngineError> {
     if !path.is_file() {
         return Ok(None);
     }
-    let bytes = fs::read(path).map_err(|error| EngineError::Message(error.to_string()))?;
-    if bytes.len().to_string() != value.package_size {
+    let expected_size = value
+        .package_size
+        .parse::<u64>()
+        .map_err(|_| EngineError::Message("更新 ZIP 大小格式无效".into()))?;
+    let size = path
+        .metadata()
+        .map_err(|error| EngineError::Message(error.to_string()))?
+        .len();
+    if size != expected_size {
         fs::remove_file(path).map_err(|error| EngineError::Message(error.to_string()))?;
         return Ok(None);
     }
-    let hash = hex::encode(Sha256::digest(&bytes));
+    state
+        .set_download_status(
+            "正在校验本地完整包",
+            DownloadProgress {
+                source: "cache".into(),
+                source_url: None,
+                downloaded_bytes: 0,
+                total_bytes: expected_size,
+                bytes_per_second: 0,
+                latency_ms: 0,
+                resumed: true,
+            },
+        )
+        .await;
+    let capacity = usize::try_from(expected_size)
+        .map_err(|_| EngineError::Message("完整包过大，无法载入内存".into()))?;
+    let mut file = File::open(path).map_err(|error| EngineError::Message(error.to_string()))?;
+    let mut bytes = Vec::with_capacity(capacity);
+    let mut hasher = Sha256::new();
+    let mut buffer = vec![0_u8; 1024 * 1024];
+    let mut verified = 0_u64;
+    let mut last_emit = Instant::now()
+        .checked_sub(Duration::from_millis(250))
+        .unwrap_or_else(Instant::now);
+    loop {
+        let read = file
+            .read(&mut buffer)
+            .map_err(|error| EngineError::Message(error.to_string()))?;
+        if read == 0 {
+            break;
+        }
+        hasher.update(&buffer[..read]);
+        bytes.extend_from_slice(&buffer[..read]);
+        verified += read as u64;
+        if last_emit.elapsed() >= Duration::from_millis(200) || verified == expected_size {
+            state
+                .set_download_status(
+                    "正在校验本地完整包",
+                    DownloadProgress {
+                        source: "cache".into(),
+                        source_url: None,
+                        downloaded_bytes: verified,
+                        total_bytes: expected_size,
+                        bytes_per_second: 0,
+                        latency_ms: 0,
+                        resumed: true,
+                    },
+                )
+                .await;
+            last_emit = Instant::now();
+        }
+    }
+    let hash = hex::encode(hasher.finalize());
     if hash.eq_ignore_ascii_case(&value.package_sha256) {
         return Ok(Some(bytes));
     }
@@ -240,6 +300,7 @@ pub(super) async fn list_sources(
         }
         source.latency_ms =
             probe_source_latency(&client, &origin, &source.key, access_token.as_deref()).await;
+        source.available = source.latency_ms.is_some();
     }
     Ok(sources)
 }
@@ -273,12 +334,13 @@ pub(super) async fn download_package(
         .parse::<u64>()
         .map_err(|_| EngineError::Message("更新 ZIP 大小格式无效".into()))?;
     let (final_path, partial_path) = package_cache_paths(state, value)?;
-    if let Some(bytes) = cached_package(&final_path, value)? {
+    if let Some(bytes) = cached_package(state, &final_path, value).await? {
         state
             .set_download_status(
                 "更新包已从本地缓存读取",
                 DownloadProgress {
                     source: "cache".into(),
+                    source_url: None,
                     downloaded_bytes: expected_size,
                     total_bytes: expected_size,
                     bytes_per_second: 0,
@@ -352,6 +414,7 @@ pub(super) async fn download_package(
                 "正在下载更新包",
                 DownloadProgress {
                     source: label.clone(),
+                    source_url: Some(url.clone()),
                     downloaded_bytes: downloaded,
                     total_bytes: expected_size,
                     bytes_per_second: 0,
@@ -383,6 +446,7 @@ pub(super) async fn download_package(
                         "正在下载更新包",
                         DownloadProgress {
                             source: label.clone(),
+                            source_url: Some(url.clone()),
                             downloaded_bytes: downloaded.min(expected_size),
                             total_bytes: expected_size,
                             bytes_per_second: (received as f64 / elapsed) as u64,
@@ -427,6 +491,7 @@ pub(super) async fn download_package(
                 "更新包下载完成，正在校验",
                 DownloadProgress {
                     source: label,
+                    source_url: Some(url.clone()),
                     downloaded_bytes: expected_size,
                     total_bytes: expected_size,
                     bytes_per_second: 0,
@@ -442,4 +507,56 @@ pub(super) async fn download_package(
         failures.len(),
         failures.join("；")
     )))
+}
+
+pub(super) async fn download_full_package(
+    state: &UpdaterState,
+    value: &ClientFullPackageDownload,
+) -> Result<Vec<u8>, EngineError> {
+    let envelope = MigrationEnvelope {
+        migration_id: format!("base-{}", value.package_sha256),
+        from_version: "base".into(),
+        to_version: "base".into(),
+        package_key: "base".into(),
+        package_urls: value.sources.clone(),
+        package_sha256: value.package_sha256.clone(),
+        package_size: value.package_size.to_string(),
+        signature: String::new(),
+        plan: crate::contracts::UpdatePlan {
+            schema_version: 1,
+            migration_id: "base".into(),
+            from_version: "base".into(),
+            to_version: "base".into(),
+            anchors: Vec::new(),
+            operations: Vec::new(),
+        },
+        anchors: Vec::new(),
+    };
+    download_package(state, &envelope).await
+}
+
+pub(super) async fn fetch_full_package(
+    state: &UpdaterState,
+    version: &str,
+    source_key: Option<&str>,
+) -> Result<ClientFullPackageDownload, EngineError> {
+    let mut request = reqwest::Client::new()
+        .get(format!(
+            "{}/api/updater/versions/{}/package",
+            state.console_origin.trim_end_matches('/'),
+            url::form_urlencoded::byte_serialize(version.as_bytes()).collect::<String>()
+        ))
+        .header(reqwest::header::ACCEPT_ENCODING, "identity");
+    if let Some(source_key) = source_key {
+        request = request.query(&[("sourceKey", source_key)]);
+    }
+    if let Some(token) = state.access_token.read().await.clone() {
+        request = request.bearer_auth(token);
+    }
+    let response = request
+        .send()
+        .await
+        .map_err(|error| EngineError::Message(error.to_string()))?;
+    let response = ensure_success(response, "Console 客户端完整包接口").await?;
+    decode_json(response, "Console 客户端完整包接口").await
 }

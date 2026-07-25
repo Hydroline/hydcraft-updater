@@ -17,6 +17,7 @@
 		"@tauri-apps/api": "^2.8.0",
 		"@tauri-apps/plugin-dialog": "^2.4.0",
 		"@tauri-apps/plugin-opener": "^2.5.4",
+		"dayjs": "^1.11.21",
 		"dompurify": "3.4.12",
 		"marked": "18.0.7",
 		"overlayscrollbars": "2.16.0",

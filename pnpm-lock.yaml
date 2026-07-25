@@ -26,6 +26,9 @@ importers:
       '@tauri-apps/plugin-opener':
         specifier: ^2.5.4
         version: 2.5.4
+      dayjs:
+        specifier: ^1.11.21
+        version: 1.11.21
       dompurify:
         specifier: 3.4.12
         version: 3.4.12
@@ -1366,6 +1369,9 @@ packages:
 
   csstype@3.2.3:
     resolution: {integrity: sha512-z1HGKcYy2xA8AGQfwrn0PAy+PB7X/GSj3UVJW9qKyn43xWa+gl5nXmU4qqLMRzWVLFC8KusUX8T/0kCiOYpAIQ==}
+
+  dayjs@1.11.21:
+    resolution: {integrity: sha512-98IT+HOahAisibz/yjKbzuOBwYcjJ7BCLPzARyHiyEBmRz4fatF+KPJszEHXsGYjUG234aH/cOjW1wwTbKUZlA==}
 
   de-indent@1.0.2:
     resolution: {integrity: sha512-e/1zu3xH5MQryN2zdVaF0OrdNLUbvWxzMbi+iNA6Bky7l1RoP8a2fIbRocyHclXt/arDrrR6lL3TqFD9pMQTsg==}
@@ -3546,6 +3552,8 @@ snapshots:
       css-tree: 2.2.1
 
   csstype@3.2.3: {}
+
+  dayjs@1.11.21: {}
 
   de-indent@1.0.2: {}
 

@@ -1,4 +1,4 @@
-use crate::contracts::{DownloadProgress, UpdateConflict, UpdaterStatus};
+use crate::contracts::{DownloadProgress, OperationProgress, UpdateConflict, UpdaterStatus};
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, path::PathBuf, sync::Arc};
 use tauri::{AppHandle, Emitter};
@@ -36,6 +36,7 @@ impl UpdaterState {
                 current_version: None,
                 target_version: None,
                 download: None,
+                operation: None,
             })),
             selected_version: Arc::new(RwLock::new(None)),
             selected_source: Arc::new(RwLock::new(None)),
@@ -68,6 +69,7 @@ impl UpdaterState {
             current_version,
             target_version,
             download: None,
+            operation: None,
         };
         *self.status.write().await = status.clone();
         if let Some(app) = self.app.read().await.clone() {
@@ -85,6 +87,7 @@ impl UpdaterState {
             current_version: None,
             target_version: None,
             download: None,
+            operation: None,
         };
         *self.status.write().await = status.clone();
         if let Some(app) = self.app.read().await.clone() {
@@ -102,6 +105,34 @@ impl UpdaterState {
             current_version: None,
             target_version: None,
             download: Some(download),
+            operation: None,
+        };
+        *self.status.write().await = status.clone();
+        if let Some(app) = self.app.read().await.clone() {
+            let _ = app.emit("updater-status", status);
+        }
+    }
+
+    pub async fn set_operation_status(
+        &self,
+        stage: &str,
+        completed_items: Option<u64>,
+        total_items: Option<u64>,
+    ) {
+        let status = UpdaterStatus {
+            mode: self.mode.clone(),
+            phase: "updating".into(),
+            message: stage.into(),
+            failure_kind: None,
+            remaining_seconds: None,
+            current_version: None,
+            target_version: None,
+            download: None,
+            operation: Some(OperationProgress {
+                stage: stage.into(),
+                completed_items,
+                total_items,
+            }),
         };
         *self.status.write().await = status.clone();
         if let Some(app) = self.app.read().await.clone() {

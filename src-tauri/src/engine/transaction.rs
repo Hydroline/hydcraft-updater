@@ -1,5 +1,9 @@
 use super::{storage, EngineError};
-use crate::contracts::{Anchor, Operation, UpdateConflict, UpdatePlan};
+use crate::{
+    contracts::{Anchor, Operation, UpdateConflict, UpdatePlan},
+    state::UpdaterState,
+};
+use serde::Deserialize;
 use sha2::{Digest, Sha256};
 use std::{
     collections::HashMap,
@@ -7,6 +11,92 @@ use std::{
     io::{Cursor, Read},
     path::{Path, PathBuf},
 };
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct BaseManifest {
+    package_format: String,
+    version: String,
+}
+
+pub(super) async fn install_base_package(
+    state: &UpdaterState,
+    bytes: &[u8],
+    version: &str,
+    mode: &str,
+) -> Result<(), EngineError> {
+    let game = &state.game_dir;
+    let mut archive = ZipArchive::new(Cursor::new(bytes))
+        .map_err(|error| EngineError::Message(error.to_string()))?;
+    let mut manifest_bytes = Vec::new();
+    {
+        let mut manifest_entry = archive
+            .by_name("base-manifest.json")
+            .map_err(|_| EngineError::Message("完整包缺少 base-manifest.json".into()))?;
+        manifest_entry
+            .read_to_end(&mut manifest_bytes)
+            .map_err(|error| EngineError::Message(error.to_string()))?;
+    }
+    let manifest: BaseManifest = serde_json::from_slice(&manifest_bytes)
+        .map_err(|error| EngineError::Message(format!("完整包清单无效：{error}")))?;
+    if manifest.package_format != "hydcraft-base-zip-v1" || manifest.version != version {
+        return Err(EngineError::Message("完整包与所选客户端版本不匹配".into()));
+    }
+
+    let mods_root = ".minecraft/versions/HydCraft Oxygen/mods/";
+    let total_items = archive
+        .file_names()
+        .filter(|name| {
+            let target = name.replace('\\', "/");
+            target != "base-manifest.json"
+                && target != ".minecraft/hydcraft.json"
+                && !(mode == "mods" && !target.starts_with(mods_root))
+        })
+        .count() as u64;
+    let mut completed_items = 0_u64;
+    state
+        .set_operation_status("extracting", Some(completed_items), Some(total_items))
+        .await;
+    for index in 0..archive.len() {
+        let (target, content) = {
+            let mut entry = archive
+                .by_index(index)
+                .map_err(|error| EngineError::Message(error.to_string()))?;
+            if entry.is_dir() || entry.name() == "base-manifest.json" {
+                continue;
+            }
+            let target = entry.name().replace('\\', "/");
+            if target == ".minecraft/hydcraft.json"
+                || (mode == "mods" && !target.starts_with(mods_root))
+            {
+                continue;
+            }
+            let mut content = Vec::new();
+            entry
+                .read_to_end(&mut content)
+                .map_err(|error| EngineError::Message(error.to_string()))?;
+            (target, content)
+        };
+        let destination = storage::safe_join(game, &target)?;
+        if let Some(parent) = destination.parent() {
+            fs::create_dir_all(parent).map_err(|error| EngineError::Message(error.to_string()))?;
+        }
+        let temporary = destination.with_extension("hydcraft-next");
+        fs::write(&temporary, content).map_err(|error| EngineError::Message(error.to_string()))?;
+        fs::rename(&temporary, &destination)
+            .map_err(|error| EngineError::Message(error.to_string()))?;
+        completed_items += 1;
+        if completed_items == total_items || completed_items % 10 == 0 {
+            state
+                .set_operation_status("extracting", Some(completed_items), Some(total_items))
+                .await;
+        }
+    }
+    let mut state = storage::load_client_state(game)?;
+    state.current_version = version.to_owned();
+    state.unfinished_transaction = None;
+    storage::save_state(game, &state)
+}
 use zip::ZipArchive;
 
 pub(super) fn preflight_conflicts(

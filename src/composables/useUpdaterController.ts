@@ -14,6 +14,7 @@ import {
 	THEME_MODES,
 	type ClientInspection,
 	type ClientDetailsKind,
+	type ClientInstallMode,
 	type ClientVersionOption,
 	type DesktopIdentity,
 	type DownloadSource,
@@ -43,10 +44,10 @@ export function useUpdaterController() {
 	const conflicts = ref<UpdateConflict[]>([])
 	const conflictSelections = ref<Record<string, string>>({})
 	const sources = ref<DownloadSource[]>([])
+	const sourceTesting = ref(false)
 	const selectedSource = ref(localStorage.getItem(SOURCE_KEY) ?? '')
 	const tab = ref<TabKey>('upgrade')
 	const loginBusy = ref(false)
-	let sourceSelectionManuallyChanged = false
 	let unlistenStatus: (() => void) | undefined
 	let unlistenAuth: (() => void) | undefined
 	let lastNotifiedPhase = ''
@@ -117,14 +118,14 @@ export function useUpdaterController() {
 		return message && message !== phaseTitle.value ? message : ''
 	})
 	const sourceItems = computed<SelectOption[]>(() =>
-		sources.value
-			.filter((source) => !source.requiresLogin || authenticated.value)
-			.map((source) => ({
-				label: source.label,
-				value: source.key,
-				disabled: !source.available,
-				latencyMs: source.latencyMs,
-			})),
+		sources.value.map((source) => ({
+			label: source.label,
+			value: source.key,
+			disabled: !source.available,
+			latencyMs: source.latencyMs,
+			baseUrl: source.baseUrl,
+			available: source.available,
+		})),
 	)
 	const localeItems = computed(
 		() =>
@@ -182,21 +183,16 @@ export function useUpdaterController() {
 					locale: locale.value,
 				},
 			)
-			const selectableSources = sources.value.filter(
-				(source) => !source.requiresLogin || authenticated.value,
+			const availableSources = sources.value
+				.filter((source) => source.available)
+				.sort((left, right) => left.priority - right.priority)
+			const stored = availableSources.find(
+				(source) => source.key === selectedSource.value,
 			)
-			const preferredKey = identity.value
-				? 'dl-shanghai-cdn'
-				: selectedSource.value
-			const preferred = sourceSelectionManuallyChanged
-				? selectableSources.find(
-						(source) => source.key === selectedSource.value && source.available,
-					)
-				: selectableSources.find(
-						(source) => source.key === preferredKey && source.available,
-					)
-			const fallback =
-				preferred ?? selectableSources.find((source) => source.available)
+			const configuredDefault = availableSources.find(
+				(source) => source.isDefault,
+			)
+			const fallback = stored ?? configuredDefault ?? availableSources[0]
 			if (fallback) {
 				selectedSource.value = fallback.key
 				localStorage.setItem(SOURCE_KEY, fallback.key)
@@ -206,6 +202,19 @@ export function useUpdaterController() {
 			}
 		} catch (error) {
 			await nativeError(t('readSourcesFailed', { error: String(error) }))
+		}
+	}
+
+	async function refreshSources(): Promise<void> {
+		sourceTesting.value = true
+		sources.value = sources.value.map((source) => ({
+			...source,
+			latencyMs: null,
+		}))
+		try {
+			await loadSources()
+		} finally {
+			sourceTesting.value = false
 		}
 	}
 
@@ -250,6 +259,32 @@ export function useUpdaterController() {
 			await invokeDesktop<void>('begin_update')
 		} catch (error) {
 			await nativeError(t('beginUpdateFailed', { error: String(error) }))
+		}
+	}
+
+	async function refreshClientVersions(): Promise<void> {
+		try {
+			clientVersions.value = await invokeDesktop<ClientVersionOption[]>(
+				'client_version_options',
+			)
+			clientVersionsLoaded = true
+		} catch (error) {
+			await nativeError(t('readClientVersionsFailed', { error: String(error) }))
+		}
+	}
+
+	async function installClientVersion(
+		version: string,
+		mode: ClientInstallMode,
+	): Promise<void> {
+		conflicts.value = []
+		conflictSelections.value = {}
+		tab.value = 'upgrade'
+		await clearCurrentWindowAttention().catch(() => undefined)
+		try {
+			await invokeDesktop<void>('install_client_version', { version, mode })
+		} catch (error) {
+			await nativeError(t('installClientFailed', { error: String(error) }))
 		}
 	}
 
@@ -327,7 +362,6 @@ export function useUpdaterController() {
 		try {
 			await invokeDesktop<void>('logout_desktop')
 			identity.value = null
-			sourceSelectionManuallyChanged = false
 			await loadSources()
 		} catch (error) {
 			await nativeError(t('logoutFailed', { error: String(error) }))
@@ -371,11 +405,7 @@ export function useUpdaterController() {
 			lastNotifiedPhase = 'failed'
 			await notifyFailure()
 		}
-		const versionOptions = await invokeDesktop<ClientVersionOption[]>(
-			'client_version_options',
-		)
-		clientVersions.value = versionOptions
-		clientVersionsLoaded = true
+		await refreshClientVersions()
 		const inspection = await invokeDesktop<ClientInspection>('inspect_client')
 		currentClientVersion.value = inspection.version
 		if (
@@ -402,7 +432,6 @@ export function useUpdaterController() {
 
 	function selectSource(key: string | undefined): void {
 		if (!key) return
-		sourceSelectionManuallyChanged = true
 		selectedSource.value = key
 		localStorage.setItem(SOURCE_KEY, key)
 		void invokeDesktop<void>('select_download_source', { sourceKey: key })
@@ -468,6 +497,8 @@ export function useUpdaterController() {
 		selectedSource,
 		showProcessSpinner,
 		sourceItems,
+		sources,
+		sourceTesting,
 		startLogin,
 		status,
 		t,
@@ -477,12 +508,15 @@ export function useUpdaterController() {
 		themeMode,
 		themeModes: THEME_MODES,
 		beginUpdate,
+		installClientVersion,
 		dragFromAside,
 		launchClient,
 		logout,
 		openProfile,
 		openExternalUrl,
 		openClientDetails,
+		refreshClientVersions,
+		refreshSources,
 		retryUpdate,
 		recheckUpdate,
 		resolveConflicts,
