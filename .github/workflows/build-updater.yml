@@ -28,7 +28,7 @@ jobs:
           - os: windows-latest
             platform: windows-x86_64
             target: x86_64-pc-windows-msvc
-            artifact_path: src-tauri/target/release/hydcraft-updater.exe
+            artifact_path: src-tauri/target/x86_64-pc-windows-msvc/release/hydcraft-updater.exe
             artifact_name: hydcraft-updater-windows-x86_64
           - os: macos-latest
             platform: macos-universal
@@ -53,6 +53,18 @@ jobs:
 
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Cache Rust build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            src-tauri/target
+          key: ${{ runner.os }}-rust-${{ matrix.target }}-${{ hashFiles('src-tauri/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-rust-${{ matrix.target }}-
+            ${{ runner.os }}-rust-
 
       - name: Read updater version
         id: metadata
