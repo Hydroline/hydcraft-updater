@@ -10,6 +10,7 @@ pub fn open_version_window(app: AppHandle) -> Result<(), String> {
                 .center()
                 .resizable(false)
                 .decorations(false)
+                .devtools(false)
                 .visible(false)
                 .build()
                 .ok()
@@ -48,6 +49,7 @@ pub fn open_client_details_window(app: AppHandle) -> Result<(), String> {
             .min_inner_size(520.0, 420.0)
             .center()
             .decorations(false)
+            .devtools(false)
             .visible(false)
             .build()
             .map_err(|_| "CLIENT_DETAILS_WINDOW_CREATE_FAILED".to_string())?;
@@ -69,6 +71,7 @@ pub fn get_or_create_auth_window(app: &AppHandle) -> Result<WebviewWindow, Strin
         .center()
         .resizable(false)
         .decorations(false)
+        .devtools(false)
         .visible(false)
         .build()
         .map_err(|error| error.to_string())

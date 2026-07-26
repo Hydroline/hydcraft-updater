@@ -18,7 +18,8 @@
 				"height": 580,
 				"center": true,
 				"resizable": false,
-				"decorations": false
+				"decorations": false,
+				"devtools": false
 			},
 			{
 				"label": "auth",
@@ -29,7 +30,8 @@
 				"center": true,
 				"resizable": false,
 				"decorations": false,
-				"visible": false
+				"visible": false,
+				"devtools": false
 			},
 			{
 				"label": "version",
@@ -40,7 +42,8 @@
 				"center": true,
 				"resizable": false,
 				"decorations": false,
-				"visible": false
+				"visible": false,
+				"devtools": false
 			}
 		],
 		"security": { "csp": null }

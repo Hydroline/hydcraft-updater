@@ -128,7 +128,7 @@ export function useWebviewInteraction() {
 		const key = event.key.toLowerCase()
 		const functionKey = /^f(?:[1-9]|1[0-2])$/.test(event.key)
 		const browserNavigation =
-			(event.altKey && ['arrowleft', 'arrowright'].includes(key)) ||
+			(event.altKey && ['arrowleft', 'arrowright', 'home'].includes(key)) ||
 			['browserback', 'browserforward'].includes(key)
 		const modifierShortcut = event.ctrlKey || event.metaKey
 		const blockedModifierShortcut =
