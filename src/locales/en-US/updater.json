@@ -82,6 +82,7 @@
 	"sourceLatencyUnknown": "Awaiting test",
 	"sourceAvailable": "Available",
 	"sourceUnavailable": "Unavailable",
+	"noSourceData": "No source data",
 	"clientTitle": "Client list",
 	"currentVersionTag": "Current version",
 	"clientPublishedAt": "Published {date}",

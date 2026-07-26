@@ -82,6 +82,7 @@
 	"sourceLatencyUnknown": "等待测速",
 	"sourceAvailable": "可用",
 	"sourceUnavailable": "不可用",
+	"noSourceData": "暂无源数据",
 	"clientTitle": "客户端列表",
 	"currentVersionTag": "当前版本",
 	"clientPublishedAt": "发布于 {date}",

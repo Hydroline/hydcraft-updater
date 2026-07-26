@@ -131,7 +131,10 @@ function formatBytes(value: number): string {
 				<div
 					class="divide-y divide-slate-200 rounded-lg border border-slate-200 bg-white dark:divide-slate-800 dark:border-slate-800 dark:bg-slate-900"
 				>
-					<label class="grid gap-2 p-4 md:grid-cols-[180px_1fr] md:items-start">
+					<label
+						v-if="sourceItems.length"
+						class="grid gap-2 p-4 md:grid-cols-[180px_1fr] md:items-start"
+					>
 						<span
 							class="text-[15px] text-slate-700 md:pt-1.5 dark:text-slate-200"
 						>
@@ -263,9 +266,10 @@ function formatBytes(value: number): string {
 						>{{ t('sourceTest') }}</UButton
 					>
 				</div>
-				<Transition name="source-list">
+				<Transition name="source-list" mode="out-in">
 					<div
 						v-if="sources.length"
+						key="sources"
 						class="divide-y divide-slate-200 rounded-lg border border-slate-200 bg-white dark:divide-slate-800 dark:border-slate-800 dark:bg-slate-900"
 					>
 						<div
@@ -302,6 +306,13 @@ function formatBytes(value: number): string {
 								</UBadge>
 							</div>
 						</div>
+					</div>
+					<div
+						v-else
+						key="empty"
+						class="rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400"
+					>
+						{{ t('noSourceData') }}
 					</div>
 				</Transition>
 			</section>

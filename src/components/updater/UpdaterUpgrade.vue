@@ -611,6 +611,7 @@ function selectSource(value: string): void {
 							</UButton>
 						</div>
 						<div
+							v-if="sourceItems.length"
 							class="relative flex flex-col gap-1 items-center text-xs text-slate-500 dark:text-slate-400"
 						>
 							<div class="inline-flex items-center gap-0.5">

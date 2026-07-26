@@ -200,12 +200,17 @@ export function useUpdaterController() {
 
 	async function loadSources(): Promise<void> {
 		try {
-			sources.value = await invokeDesktop<DownloadSource[]>(
+			const nextSources = await invokeDesktop<DownloadSource[]>(
 				'download_sources',
 				{
 					locale: locale.value,
 				},
 			)
+			sources.value = nextSources
+			if (!nextSources.length) {
+				await playSystemFailureSound().catch(() => undefined)
+				return
+			}
 			const availableSources = sources.value
 				.filter((source) => source.available)
 				.sort((left, right) => left.priority - right.priority)
@@ -223,8 +228,9 @@ export function useUpdaterController() {
 					sourceKey: fallback.key,
 				})
 			}
-		} catch (error) {
-			await nativeError(t('readSourcesFailed', { error: String(error) }))
+		} catch {
+			sources.value = []
+			await playSystemFailureSound().catch(() => undefined)
 		}
 	}
 
@@ -379,6 +385,7 @@ export function useUpdaterController() {
 	async function retryUpdate(): Promise<void> {
 		if (status.value.failureKind === 'check') {
 			await recheckUpdate()
+			if (!sources.value.length) await loadSources()
 			return
 		}
 		await beginUpdate()

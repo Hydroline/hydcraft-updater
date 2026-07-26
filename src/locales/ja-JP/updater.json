@@ -82,6 +82,7 @@
 	"sourceLatencyUnknown": "測定待ち",
 	"sourceAvailable": "利用可能",
 	"sourceUnavailable": "利用不可",
+	"noSourceData": "ダウンロード元のデータがありません",
 	"clientTitle": "クライアント一覧",
 	"currentVersionTag": "現在のバージョン",
 	"clientPublishedAt": "公開日：{date}",
