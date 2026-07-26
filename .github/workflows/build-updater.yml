@@ -1,0 +1,76 @@
+name: Build updater
+
+on:
+  push:
+    paths-ignore:
+      - README*
+      - readme*
+      - '**/README*'
+      - '**/readme*'
+  pull_request:
+    paths-ignore:
+      - README*
+      - readme*
+      - '**/README*'
+      - '**/readme*'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build ${{ matrix.platform }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            platform: windows-x86_64
+            target: x86_64-pc-windows-msvc
+            artifact_path: src-tauri/target/release/hydcraft-updater.exe
+            artifact_name: hydcraft-updater-windows-x86_64
+          - os: macos-latest
+            platform: macos-universal
+            target: universal-apple-darwin
+            artifact_path: src-tauri/target/universal-apple-darwin/release/hydcraft-updater
+            artifact_name: hydcraft-updater-macos-universal
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.14.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Read updater version
+        id: metadata
+        shell: bash
+        run: |
+          version="$(node --input-type=module -e "import { readFileSync } from 'node:fs'; console.log(JSON.parse(readFileSync('src-tauri/tauri.conf.json', 'utf8')).version)")"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Install macOS Rust targets
+        if: runner.os == 'macOS'
+        run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
+
+      - name: Build updater
+        run: pnpm tauri build --target ${{ matrix.target }} --no-bundle
+
+      - name: Upload updater artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}-v${{ steps.metadata.outputs.version }}
+          path: ${{ matrix.artifact_path }}
+          if-no-files-found: error
