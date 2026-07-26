@@ -34,6 +34,8 @@ export interface OperationProgress {
 
 export interface UpdateConflict {
 	operationId: string
+	operationType: string
+	targetAction: string
 	target: string
 	reason: string
 	candidates: string[]
@@ -48,6 +50,14 @@ export interface UpdaterContext {
 export interface ClientInspection {
 	version: string | null
 	needsSelection: boolean
+}
+
+export interface ClientStorageInfo {
+	downloadsBytes: number
+	backupsBytes: number
+	rollbackAvailable: boolean
+	rollbackFromVersion: string | null
+	rollbackToVersion: string | null
 }
 
 export interface ClientVersionOption {
@@ -123,6 +133,8 @@ export type Translator = (
 ) => string
 
 export const SOURCE_KEY = 'hydcraft:updater:source'
+export const CLEAN_DOWNLOADS_AFTER_INSTALL_KEY =
+	'hydcraft:updater:clean-downloads-after-install'
 
 export const THEME_MODES = [
 	{ value: 'light', icon: 'i-lucide-sun', label: 'themeLight' },

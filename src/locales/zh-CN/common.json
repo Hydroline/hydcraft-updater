@@ -18,5 +18,8 @@
 	"minimize": "最小化窗口",
 	"confirm": "确认",
 	"cancel": "取消",
+	"copy": "复制",
+	"paste": "粘贴",
+	"selectAll": "全选",
 	"dialogTitle": "HydCraft 更新器"
 }

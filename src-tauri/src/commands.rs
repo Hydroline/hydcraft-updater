@@ -40,6 +40,47 @@ pub async fn updater_context(state: State<'_, UpdaterState>) -> Result<UpdaterCo
 }
 
 #[tauri::command]
+pub fn client_storage_info(
+    state: State<'_, UpdaterState>,
+) -> Result<engine::ClientStorageInfo, String> {
+    engine::storage_info(&state.game_dir).map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub async fn clean_downloads(
+    state: State<'_, UpdaterState>,
+) -> Result<engine::ClientStorageInfo, String> {
+    if state.status.read().await.phase == "updating" {
+        return Err("更新正在进行，请完成更新后再清理缓存".into());
+    }
+    engine::clean_downloads(&state.game_dir).map_err(|error| error.to_string())?;
+    engine::storage_info(&state.game_dir).map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub async fn clean_backups(
+    state: State<'_, UpdaterState>,
+) -> Result<engine::ClientStorageInfo, String> {
+    if state.status.read().await.phase == "updating" {
+        return Err("更新正在进行，请完成更新后再清理回滚备份".into());
+    }
+    engine::clean_backups(&state.game_dir).map_err(|error| error.to_string())?;
+    engine::storage_info(&state.game_dir).map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub async fn rollback_last_update(state: State<'_, UpdaterState>) -> Result<(), String> {
+    if state.status.read().await.phase == "updating" {
+        return Err("更新正在进行，请完成更新后再回滚".into());
+    }
+    engine::rollback_last_update(&state.game_dir).map_err(|error| error.to_string())?;
+    state
+        .set_status("checking-update", "正在检查回滚后的客户端状态", None)
+        .await;
+    Ok(())
+}
+
+#[tauri::command]
 pub async fn client_version_options(
     state: State<'_, UpdaterState>,
 ) -> Result<Vec<engine::ClientVersionOption>, String> {
@@ -151,6 +192,25 @@ pub async fn resolve_conflicts(
 }
 
 #[tauri::command]
+pub async fn cancel_conflict_resolution(
+    state: State<'_, UpdaterState>,
+) -> Result<crate::contracts::UpdaterStatus, String> {
+    state.conflicts.write().await.clear();
+    state.resolutions.write().await.clear();
+    let current_version = state.selected_version.read().await.clone();
+    state
+        .set_status_with_versions(
+            "awaiting-update-decision",
+            "发现客户端更新",
+            None,
+            current_version,
+            None,
+        )
+        .await;
+    Ok(state.status.read().await.clone())
+}
+
+#[tauri::command]
 pub async fn select_current_version(
     version: String,
     state: State<'_, UpdaterState>,
@@ -195,7 +255,11 @@ pub async fn select_download_source(
 }
 
 #[tauri::command]
-pub async fn begin_update(state: State<'_, UpdaterState>) -> Result<(), String> {
+pub async fn begin_update(
+    clean_downloads_after_install: bool,
+    state: State<'_, UpdaterState>,
+) -> Result<(), String> {
+    *state.clean_downloads_after_install.write().await = clean_downloads_after_install;
     let selected = state.selected_version.read().await.clone();
     let source = state.selected_source.read().await.clone();
     state.set_status("updating", "正在更新客户端", None).await;
@@ -207,8 +271,10 @@ pub async fn begin_update(state: State<'_, UpdaterState>) -> Result<(), String> 
 pub async fn install_client_version(
     version: String,
     mode: String,
+    clean_downloads_after_install: bool,
     state: State<'_, UpdaterState>,
 ) -> Result<(), String> {
+    *state.clean_downloads_after_install.write().await = clean_downloads_after_install;
     state
         .set_status_with_versions(
             "updating",

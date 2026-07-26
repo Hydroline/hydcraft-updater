@@ -18,5 +18,8 @@
 	"minimize": "ウィンドウを最小化",
 	"confirm": "確認",
 	"cancel": "キャンセル",
+	"copy": "コピー",
+	"paste": "貼り付け",
+	"selectAll": "すべて選択",
 	"dialogTitle": "HydCraft アップデーター"
 }

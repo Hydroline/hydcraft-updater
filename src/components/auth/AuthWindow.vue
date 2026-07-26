@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useUpdaterAppearance } from '../../composables/useUpdaterAppearance'
 import { hideAuthenticationWindow, invokeDesktop } from '../../utils/tauri'
 import AppWindowTitlebar from '../window/AppWindowTitlebar.vue'
+import WebviewInteractionGuard from '../window/WebviewInteractionGuard.vue'
 
 type AuthPhase = 'browser-opened' | 'verified' | 'failed'
 
@@ -62,50 +63,54 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-	<main
-		class="relative flex min-h-screen flex-col items-center justify-center bg-white p-6 text-slate-950 dark:bg-slate-950 dark:text-white"
-	>
-		<AppWindowTitlebar
-			:close-label="t('close')"
-			:minimize-label="t('minimize')"
-			close-mode="hide-auth"
-		/>
-		<div class="flex w-full max-w-xs flex-col items-center gap-5 text-center">
-			<UIcon
-				:name="icon"
-				class="size-16"
-				:class="
-					phase === 'browser-opened'
-						? 'animate-spin text-primary-500'
-						: phase === 'verified'
-							? 'text-success-500'
-							: 'text-danger-500'
-				"
-			/>
-			<p class="max-w-xs text-sm leading-6 text-slate-600 dark:text-slate-300">
-				{{ displayMessage }}
-			</p>
-			<UButton
-				v-if="phase === 'verified'"
-				color="primary"
-				variant="soft"
-				class="mt-3 w-full justify-center"
-				@click="hideAuthenticationWindow"
-				>{{ t('confirm') }}</UButton
-			>
-		</div>
-		<div
-			class="absolute inset-x-0 bottom-7 flex items-center justify-center text-xs text-slate-600 dark:text-slate-300"
+	<WebviewInteractionGuard>
+		<main
+			class="relative flex min-h-screen flex-col items-center justify-center bg-white p-6 text-slate-950 dark:bg-slate-950 dark:text-white"
 		>
-			<span>{{ t('manualPrefix') }}</span
-			><UButton
-				color="primary"
-				variant="link"
-				size="xs"
-				class="ml-1 p-0"
-				@click="openManually"
-				>{{ t('manual') }}</UButton
+			<AppWindowTitlebar
+				:close-label="t('close')"
+				:minimize-label="t('minimize')"
+				close-mode="hide-auth"
+			/>
+			<div class="flex w-full max-w-xs flex-col items-center gap-5 text-center">
+				<UIcon
+					:name="icon"
+					class="size-16"
+					:class="
+						phase === 'browser-opened'
+							? 'animate-spin text-primary-500'
+							: phase === 'verified'
+								? 'text-success-500'
+								: 'text-danger-500'
+					"
+				/>
+				<p
+					class="max-w-xs text-sm leading-6 text-slate-600 dark:text-slate-300"
+				>
+					{{ displayMessage }}
+				</p>
+				<UButton
+					v-if="phase === 'verified'"
+					color="primary"
+					variant="soft"
+					class="mt-3 w-full justify-center"
+					@click="hideAuthenticationWindow"
+					>{{ t('confirm') }}</UButton
+				>
+			</div>
+			<div
+				class="absolute inset-x-0 bottom-7 flex items-center justify-center text-xs text-slate-600 dark:text-slate-300"
 			>
-		</div>
-	</main>
+				<span>{{ t('manualPrefix') }}</span
+				><UButton
+					color="primary"
+					variant="link"
+					size="xs"
+					class="ml-1 p-0"
+					@click="openManually"
+					>{{ t('manual') }}</UButton
+				>
+			</div>
+		</main>
+	</WebviewInteractionGuard>
 </template>

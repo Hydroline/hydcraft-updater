@@ -17,6 +17,20 @@ pub(super) struct ClientState {
     pub(super) managed_files: HashMap<String, ManagedFile>,
     pub(super) addon_state: HashMap<String, bool>,
     pub(super) unfinished_transaction: Option<String>,
+    #[serde(default)]
+    pub(super) last_transaction: Option<CompletedTransaction>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct CompletedTransaction {
+    pub(super) migration_id: String,
+    pub(super) from_version: String,
+    pub(super) to_version: String,
+    #[serde(default)]
+    pub(super) previous_managed_files: HashMap<String, ManagedFile>,
+    #[serde(default)]
+    pub(super) previous_addon_state: HashMap<String, bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -28,6 +42,52 @@ pub(super) struct ManagedFile {
 
 pub(super) fn state_path(game: &Path) -> PathBuf {
     game.join(".minecraft").join("hydcraft.json")
+}
+
+pub(super) fn hydcraft_path(game: &Path) -> PathBuf {
+    game.join(".minecraft").join(".hydcraft")
+}
+
+pub(super) fn downloads_path(game: &Path) -> PathBuf {
+    hydcraft_path(game).join("downloads")
+}
+
+pub(super) fn backups_path(game: &Path) -> PathBuf {
+    hydcraft_path(game).join("backups")
+}
+
+pub(super) fn transaction_backup_path(
+    game: &Path,
+    migration_id: &str,
+) -> Result<PathBuf, EngineError> {
+    safe_join(&backups_path(game), migration_id)
+}
+
+pub(super) fn directory_size(path: &Path) -> Result<u64, EngineError> {
+    if !path.is_dir() {
+        return Ok(0);
+    }
+    let mut size = 0_u64;
+    for entry in WalkDir::new(path)
+        .into_iter()
+        .filter_map(Result::ok)
+        .filter(|entry| entry.file_type().is_file())
+    {
+        size = size.saturating_add(
+            entry
+                .metadata()
+                .map_err(|error| EngineError::Message(error.to_string()))?
+                .len(),
+        );
+    }
+    Ok(size)
+}
+
+pub(super) fn clear_directory(path: &Path) -> Result<(), EngineError> {
+    if path.exists() {
+        fs::remove_dir_all(path).map_err(|error| EngineError::Message(error.to_string()))?;
+    }
+    fs::create_dir_all(path).map_err(|error| EngineError::Message(error.to_string()))
 }
 
 fn existing_state_path(game: &Path) -> Option<PathBuf> {
@@ -59,18 +119,19 @@ pub(super) fn load_client_state(game: &Path) -> Result<ClientState, EngineError>
     .unwrap_or_default())
 }
 
-pub(super) fn verify_anchors(game: &Path, anchors: &[Anchor]) -> Result<(), EngineError> {
+pub(super) fn mismatched_anchors(
+    game: &Path,
+    anchors: &[Anchor],
+) -> Result<Vec<Anchor>, EngineError> {
+    let mut mismatches = Vec::new();
     for anchor in anchors {
         let path = safe_join(game, &anchor.path)?;
-        let actual = sha256(&path)?;
-        if !actual.eq_ignore_ascii_case(&anchor.sha256) {
-            return Err(EngineError::Message(format!(
-                "客户端锚点不匹配：{}",
-                anchor.path
-            )));
+        let matches = path.is_file() && sha256(&path)?.eq_ignore_ascii_case(&anchor.sha256);
+        if !matches {
+            mismatches.push(anchor.clone());
         }
     }
-    Ok(())
+    Ok(mismatches)
 }
 
 pub(super) fn safe_join(root: &Path, target: &str) -> Result<PathBuf, EngineError> {

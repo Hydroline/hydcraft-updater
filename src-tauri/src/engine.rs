@@ -5,6 +5,7 @@ mod transaction;
 
 use crate::{contracts::MigrationEnvelope, state::UpdaterState};
 use serde::{Deserialize, Serialize};
+use std::path::Path;
 
 #[derive(Debug, thiserror::Error)]
 pub enum EngineError {
@@ -12,6 +13,22 @@ pub enum EngineError {
     Conflicts(Vec<crate::contracts::UpdateConflict>),
     #[error("{0}")]
     Message(String),
+}
+
+pub enum ApplyResult {
+    Updated(String),
+    PartiallyApplied,
+    UpToDate,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClientStorageInfo {
+    pub downloads_bytes: u64,
+    pub backups_bytes: u64,
+    pub rollback_available: bool,
+    pub rollback_from_version: Option<String>,
+    pub rollback_to_version: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -144,11 +161,47 @@ pub fn recover_unfinished_transaction(game: &std::path::Path) -> Result<bool, En
     transaction::recover_unfinished_transaction(game)
 }
 
+pub fn storage_info(game: &Path) -> Result<ClientStorageInfo, EngineError> {
+    let state = storage::load_client_state(game)?;
+    let rollback = state.last_transaction.filter(|transaction| {
+        storage::transaction_backup_path(game, &transaction.migration_id)
+            .map(|path| path.is_dir())
+            .unwrap_or(false)
+    });
+    Ok(ClientStorageInfo {
+        downloads_bytes: storage::directory_size(&storage::downloads_path(game))?,
+        backups_bytes: storage::directory_size(&storage::backups_path(game))?,
+        rollback_available: rollback.is_some(),
+        rollback_from_version: rollback.as_ref().map(|value| value.from_version.clone()),
+        rollback_to_version: rollback.as_ref().map(|value| value.to_version.clone()),
+    })
+}
+
+pub fn clean_downloads(game: &Path) -> Result<(), EngineError> {
+    storage::clear_directory(&storage::downloads_path(game))
+}
+
+pub fn clean_backups(game: &Path) -> Result<(), EngineError> {
+    let mut state = storage::load_client_state(game)?;
+    if state.unfinished_transaction.is_some() {
+        return Err(EngineError::Message(
+            "当前仍有未完成的更新，暂时不能清理回滚备份".into(),
+        ));
+    }
+    storage::clear_directory(&storage::backups_path(game))?;
+    state.last_transaction = None;
+    storage::save_state(game, &state)
+}
+
+pub fn rollback_last_update(game: &Path) -> Result<(), EngineError> {
+    transaction::rollback_last_update(game)
+}
+
 pub async fn apply_next(
     state: &UpdaterState,
     selected_version: Option<String>,
     source_key: Option<String>,
-) -> Result<Option<String>, EngineError> {
+) -> Result<ApplyResult, EngineError> {
     let mut client_state = storage::load_client_state(&state.game_dir)?;
     if client_state.current_version.is_empty() {
         client_state.current_version = selected_version
@@ -157,7 +210,7 @@ pub async fn apply_next(
     let migration =
         match fetch_next(state, &client_state.current_version, source_key.as_deref()).await? {
             Some(value) => value,
-            None => return Ok(None),
+            None => return Ok(ApplyResult::UpToDate),
         };
     package::verify_envelope(&migration)?;
     let anchors = if migration.anchors.is_empty() {
@@ -165,7 +218,7 @@ pub async fn apply_next(
     } else {
         &migration.anchors
     };
-    storage::verify_anchors(&state.game_dir, anchors)?;
+    let anchor_mismatches = storage::mismatched_anchors(&state.game_dir, anchors)?;
     let bytes = network::download_package(state, &migration).await?;
     state.set_operation_status("verifying", None, None).await;
     package::verify_package(&bytes, &migration)?;
@@ -190,19 +243,24 @@ pub async fn apply_next(
         &resolutions,
         &bytes,
         anchors,
+        &anchor_mismatches,
     )?;
     if !conflicts.is_empty() {
         return Err(EngineError::Conflicts(conflicts));
     }
     state.set_operation_status("applying", None, None).await;
-    transaction::apply_transaction(
+    let partially_applied = transaction::apply_transaction(
         &state.game_dir,
         &extracted,
         &bytes,
         &mut client_state,
         &resolutions,
     )?;
-    Ok(Some(migration.to_version))
+    if partially_applied {
+        Ok(ApplyResult::PartiallyApplied)
+    } else {
+        Ok(ApplyResult::Updated(migration.to_version))
+    }
 }
 
 pub async fn install_client_version(

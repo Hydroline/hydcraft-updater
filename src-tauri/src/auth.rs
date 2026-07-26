@@ -5,6 +5,7 @@ use crate::{
 };
 use keyring::Entry;
 use serde::Deserialize;
+use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, State};
 use url::Url;
 
@@ -50,7 +51,7 @@ pub(crate) async fn exchange_desktop_code_value(
         let _ = revoke_desktop_session(&state.console_origin, &bundle.refresh_token).await;
         return Err(error);
     }
-    *state.access_token.write().await = Some(bundle.access_token);
+    set_access_token(&state, &bundle).await;
     load_desktop_identity(&state).await?;
     state
         .set_status("authenticated", "HydCraft 账户已登录", None)
@@ -94,6 +95,39 @@ pub(crate) async fn load_desktop_identity(state: &UpdaterState) -> Result<(), St
 struct DesktopTokenBundle {
     access_token: String,
     refresh_token: String,
+    #[serde(default)]
+    expires_in: Option<u64>,
+}
+
+async fn set_access_token(state: &UpdaterState, bundle: &DesktopTokenBundle) {
+    *state.access_token.write().await = Some(bundle.access_token.clone());
+    *state.access_token_expires_at.write().await = bundle
+        .expires_in
+        .map(|seconds| Instant::now() + Duration::from_secs(seconds));
+}
+
+pub(crate) async fn ensure_desktop_session(state: &UpdaterState) -> Result<(), String> {
+    let _refresh_guard = state.auth_refresh_lock.lock().await;
+    let should_refresh = {
+        let access_token = state.access_token.read().await;
+        let expires_at = state.access_token_expires_at.read().await;
+        access_token.is_some()
+            && expires_at
+                .map(|value| value <= Instant::now() + Duration::from_secs(30))
+                .unwrap_or(true)
+    };
+    if !should_refresh {
+        return Ok(());
+    }
+
+    if restore_desktop_session(state.clone()).await? {
+        return Ok(());
+    }
+
+    *state.access_token.write().await = None;
+    *state.access_token_expires_at.write().await = None;
+    *state.identity.write().await = None;
+    Ok(())
 }
 
 async fn request_desktop_token_bundle(
@@ -183,7 +217,7 @@ pub(crate) async fn restore_desktop_session(state: UpdaterState) -> Result<bool,
         let _ = revoke_desktop_session(&state.console_origin, &bundle.refresh_token).await;
         return Err(error);
     }
-    *state.access_token.write().await = Some(bundle.access_token);
+    set_access_token(&state, &bundle).await;
     load_desktop_identity(&state).await?;
     state
         .set_status("authenticated", "HydCraft 账户已恢复登录", None)
@@ -198,6 +232,7 @@ pub async fn logout_desktop(state: State<'_, UpdaterState>) -> Result<(), String
     }
     clear_desktop_refresh_token();
     *state.access_token.write().await = None;
+    *state.access_token_expires_at.write().await = None;
     *state.identity.write().await = None;
     state
         .set_status("unauthenticated", "HydCraft 账户已退出登录", None)

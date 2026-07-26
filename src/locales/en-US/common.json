@@ -18,5 +18,8 @@
 	"minimize": "Minimize window",
 	"confirm": "Confirm",
 	"cancel": "Cancel",
+	"copy": "Copy",
+	"paste": "Paste",
+	"selectAll": "Select all",
 	"dialogTitle": "HydCraft Updater"
 }

@@ -8,6 +8,7 @@ import type {
 	ClientVersionOption,
 	ClientDetailsKind,
 	ClientInstallMode,
+	ClientStorageInfo,
 	DownloadSource,
 	SelectOption,
 	TabKey,
@@ -20,9 +21,16 @@ import type {
 const props = defineProps<{
 	authenticated: boolean
 	clientVersions: ClientVersionOption[]
+	clientVersionsLoading: boolean
 	conflictSelections: Record<string, string>
 	conflicts: UpdateConflict[]
 	currentClientVersion: string | null
+	storageInfo: ClientStorageInfo
+	cleanDownloadsAfterInstall: boolean
+	downloadsCleaning: boolean
+	backupsCleaning: boolean
+	downloadsCleanupVersion: number
+	backupsCleanupVersion: number
 	context: UpdaterContext
 	sources: DownloadSource[]
 	sourceTesting: boolean
@@ -41,17 +49,22 @@ const props = defineProps<{
 
 const emit = defineEmits<{
 	beginUpdate: []
+	cleanDownloads: []
+	cleanBackups: []
+	cancelConflictResolution: []
 	launchClient: []
 	login: []
 	openClientDetails: [payload: { version: string; detail: ClientDetailsKind }]
 	refreshClients: []
 	installClient: [payload: { version: string; mode: ClientInstallMode }]
+	rollbackLastUpdate: []
 	openExternalUrl: [url: string]
 	recheckUpdate: []
 	resolveConflicts: []
 	retryUpdate: []
 	selectConflictResolution: [operationId: string, value: string]
 	selectSource: [value: string | undefined]
+	setCleanDownloadsAfterInstall: [value: boolean]
 	refreshSources: []
 }>()
 </script>
@@ -79,6 +92,7 @@ const emit = defineEmits<{
 				:status="props.status"
 				:t="props.t"
 				@begin-update="emit('beginUpdate')"
+				@cancel-conflict-resolution="emit('cancelConflictResolution')"
 				@launch-client="emit('launchClient')"
 				@login="emit('login')"
 				@recheck-update="emit('recheckUpdate')"
@@ -100,19 +114,33 @@ const emit = defineEmits<{
 				:source-items="props.sourceItems"
 				:sources="props.sources"
 				:source-testing="props.sourceTesting"
+				:storage-info="props.storageInfo"
+				:clean-downloads-after-install="props.cleanDownloadsAfterInstall"
+				:downloads-cleaning="props.downloadsCleaning"
+				:backups-cleaning="props.backupsCleaning"
+				:downloads-cleanup-version="props.downloadsCleanupVersion"
+				:backups-cleanup-version="props.backupsCleanupVersion"
 				:t="props.t"
 				@select-source="emit('selectSource', $event)"
+				@set-clean-downloads-after-install="
+					emit('setCleanDownloadsAfterInstall', $event)
+				"
+				@clean-downloads="emit('cleanDownloads')"
+				@clean-backups="emit('cleanBackups')"
 				@refresh-sources="emit('refreshSources')"
 			/>
 
 			<UpdaterClient
 				v-else-if="props.tab === 'client'"
 				:client-versions="props.clientVersions"
+				:loading="props.clientVersionsLoading"
 				:current-client-version="props.currentClientVersion"
+				:storage-info="props.storageInfo"
 				:t="props.t"
 				@open-client-details="emit('openClientDetails', $event)"
 				@refresh="emit('refreshClients')"
 				@install-client="emit('installClient', $event)"
+				@rollback-last-update="emit('rollbackLastUpdate')"
 			/>
 
 			<UpdaterAddons v-else-if="props.tab === 'addons'" :t="props.t" />

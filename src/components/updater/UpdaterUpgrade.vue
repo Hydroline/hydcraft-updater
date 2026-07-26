@@ -31,8 +31,11 @@ const props = defineProps<{
 	t: Translator
 }>()
 
+const SKIP_RESOLUTION = '__hydcraft_skip__'
+
 const emit = defineEmits<{
 	beginUpdate: []
+	cancelConflictResolution: []
 	launchClient: []
 	login: []
 	recheckUpdate: []
@@ -145,13 +148,38 @@ function conflictOptions(conflict: UpdateConflict): SelectOption[] {
 	const values = Array.from(
 		new Set([conflict.target, ...conflict.candidates].filter(Boolean)),
 	)
-	return values.map((value) => ({
-		label:
-			value === conflict.target
-				? props.t('conflictUseTarget', { path: value })
-				: props.t('conflictUseCandidate', { path: value }),
-		value,
-	}))
+	return [
+		...values.map((value) => ({
+			label:
+				value === conflict.target
+					? targetOptionLabel(conflict)
+					: props.t('conflictUseCandidate', { file: displayName(value) }),
+			value,
+		})),
+		{ label: props.t('conflictKeepLocal'), value: SKIP_RESOLUTION },
+	]
+}
+
+function displayName(path: string): string {
+	return path.replace(/\\/g, '/').split('/').filter(Boolean).at(-1) ?? path
+}
+
+function targetOptionLabel(conflict: UpdateConflict): string {
+	const file = displayName(conflict.target)
+	switch (conflict.targetAction) {
+		case 'overwrite':
+			return props.t('conflictOverwriteTarget', { file })
+		case 'install':
+			return props.t('conflictInstallTarget', { file })
+		case 'delete':
+			return props.t('conflictDeleteTarget', { file })
+		case 'acknowledgeMissing':
+			return props.t('conflictAcknowledgeMissing', { file })
+		case 'confirm':
+			return props.t('conflictConfirmAnchor', { file })
+		default:
+			return props.t('conflictApplyTarget', { file })
+	}
 }
 
 function emitConflictResolution(
@@ -166,6 +194,9 @@ function emitConflictResolution(
 }
 
 function selectSource(value: string): void {
+	const source = props.sourceItems.find((item) => item.value === value)
+	if (!source || source.disabled) return
+
 	sourceMenuOpen.value = false
 	emit('selectSource', value)
 }
@@ -200,7 +231,12 @@ function selectSource(value: string): void {
 					</h1>
 					<p
 						v-if="
-							['updating', 'ready', 'unknown-client'].includes(status.phase) ||
+							[
+								'updating',
+								'ready',
+								'unknown-client',
+								'partial-update',
+							].includes(status.phase) ||
 							(phaseSubtitle && status.phase !== 'awaiting-update-decision')
 						"
 						class="mt-2 text-sm text-slate-600 dark:text-slate-300"
@@ -212,7 +248,9 @@ function selectSource(value: string): void {
 									? t('bodyReady')
 									: status.phase === 'unknown-client'
 										? t('bodyUnknownClient')
-										: phaseSubtitle
+										: status.phase === 'partial-update'
+											? t('bodyPartialUpdate')
+											: phaseSubtitle
 						}}
 					</p>
 
@@ -403,7 +441,7 @@ function selectSource(value: string): void {
 
 					<div
 						v-if="status.phase === 'awaiting-conflict-resolution'"
-						class="mt-6 flex w-full flex-col gap-4 rounded-lg border border-slate-200 bg-white/80 p-4 text-left shadow-sm dark:border-slate-800 dark:bg-slate-900/70"
+						class="mt-6 flex w-full flex-col gap-4 rounded-lg border border-slate-200 bg-white/80 p-4 text-left dark:border-slate-800 dark:bg-slate-900/70"
 					>
 						<div>
 							<h2 class="text-sm font-semibold text-slate-900 dark:text-white">
@@ -421,9 +459,13 @@ function selectSource(value: string): void {
 							<p class="text-xs text-slate-500 dark:text-slate-400">
 								{{ t('conflictTarget') }}
 							</p>
-							<p class="mt-1 break-all text-xs font-medium">
+							<p class="mt-1 break-all text-xs">
 								{{ conflict.target }}
 							</p>
+							<p class="mt-3 text-xs text-slate-500 dark:text-slate-400">
+								{{ t('conflictOperation') }}
+							</p>
+							<p class="mt-1 text-xs">{{ conflict.operationType }}</p>
 							<p class="mt-3 text-xs text-slate-500 dark:text-slate-400">
 								{{ t('conflictReason') }}
 							</p>
@@ -441,14 +483,24 @@ function selectSource(value: string): void {
 								@update:model-value="emitConflictResolution(conflict, $event)"
 							/>
 						</div>
-						<UButton
-							color="primary"
-							class="justify-center"
-							:disabled="!conflicts.length"
-							@click="emit('resolveConflicts')"
-						>
-							{{ t('confirmConflictResolutions') }}
-						</UButton>
+						<div class="grid grid-cols-2 gap-3">
+							<UButton
+								color="neutral"
+								variant="soft"
+								class="justify-center"
+								@click="emit('cancelConflictResolution')"
+							>
+								{{ t('cancelUpdate') }}
+							</UButton>
+							<UButton
+								color="primary"
+								class="justify-center"
+								:disabled="!conflicts.length"
+								@click="emit('resolveConflicts')"
+							>
+								{{ t('confirmConflictResolutions') }}
+							</UButton>
+						</div>
 					</div>
 
 					<div
@@ -583,15 +635,18 @@ function selectSource(value: string): void {
 												type="button"
 												color="neutral"
 												variant="ghost"
+												:disabled="source.disabled"
 												class="w-full justify-start gap-2 rounded-lg px-3 py-2 text-left text-sm transition hover:bg-slate-100 dark:hover:bg-slate-800"
 												:class="{
 													'bg-primary-100/60 text-primary-600 dark:bg-primary-500/20 dark:text-primary-200':
 														selectedSource === source.value,
 													'text-slate-600 dark:text-slate-300':
 														selectedSource !== source.value,
+													'cursor-not-allowed opacity-50': source.disabled,
 												}"
 												@click="selectSource(source.value)"
 											>
+												<span class="min-w-0 truncate">{{ source.label }}</span>
 												<UBadge
 													color="neutral"
 													variant="soft"
@@ -604,21 +659,10 @@ function selectSource(value: string): void {
 															: t('sourceLatency', { value: source.latencyMs })
 													}}
 												</UBadge>
-												<span class="min-w-0 truncate">{{ source.label }}</span>
-												<UBadge
-													v-if="false"
-													color="neutral"
-													variant="soft"
-													size="xs"
-													class="ml-auto shrink-0"
-												>
-													{{ source.latencyMs }} ms
-												</UBadge>
 												<UIcon
 													v-if="selectedSource === source.value"
 													name="i-lucide-check"
-													class="h-4 w-4"
-													:class="source.latencyMs == null ? 'ml-auto' : 'ml-1'"
+													class="ml-auto h-4 w-4"
 												/>
 											</UButton>
 										</div>
@@ -696,6 +740,16 @@ function selectSource(value: string): void {
 							@click="emit('recheckUpdate')"
 						>
 							{{ t('retryUpdate') }}
+						</UButton>
+					</div>
+					<div v-if="status.phase === 'partial-update'" class="mt-6">
+						<UButton
+							color="warning"
+							variant="soft"
+							class="min-w-44 justify-center"
+							@click="emit('retryUpdate')"
+						>
+							{{ t('resumeConflictHandling') }}
 						</UButton>
 					</div>
 					<div

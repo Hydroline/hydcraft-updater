@@ -104,6 +104,21 @@ pub enum Operation {
 }
 
 impl Operation {
+    pub fn type_name(&self) -> &'static str {
+        match self {
+            Self::EnsureFile { .. } => "ensureFile",
+            Self::RemoveFile { .. } => "removeFile",
+            Self::ReplaceText { .. } => "replaceText",
+            Self::PatchJson { .. } => "patchJson",
+            Self::PatchToml { .. } => "patchToml",
+            Self::PatchProperties { .. } => "patchProperties",
+            Self::EnsureDirectory { .. } => "ensureDirectory",
+            Self::RemoveEmptyDirectory { .. } => "removeEmptyDirectory",
+            Self::AddonActivate { .. } => "addonActivate",
+            Self::AddonDeactivate { .. } => "addonDeactivate",
+        }
+    }
+
     pub fn id(&self) -> &str {
         match self {
             Self::EnsureFile { id, .. }
@@ -138,6 +153,8 @@ impl Operation {
 #[serde(rename_all = "camelCase")]
 pub struct UpdateConflict {
     pub operation_id: String,
+    pub operation_type: String,
+    pub target_action: String,
     pub target: String,
     pub reason: String,
     pub candidates: Vec<String>,

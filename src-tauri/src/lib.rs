@@ -8,11 +8,13 @@ mod windows;
 
 use auth::{desktop_login_url, exchange_desktop_code, logout_desktop, start_desktop_login};
 use commands::{
-    begin_update, client_details_window_data, client_version_options, desktop_identity,
+    begin_update, cancel_conflict_resolution, clean_backups, clean_downloads,
+    client_details_window_data, client_storage_info, client_version_options, desktop_identity,
     download_sources, hide_auth_window, hide_version_window, inspect_client,
     install_client_version, launch_client, open_client_details_window, open_external_url,
     open_version_window, pending_conflicts, play_failure_sound, recheck_update, resolve_conflicts,
-    select_current_version, select_download_source, updater_context, updater_status,
+    rollback_last_update, select_current_version, select_download_source, updater_context,
+    updater_status,
 };
 use state::UpdaterState;
 use std::{env, path::PathBuf};
@@ -65,6 +67,10 @@ pub fn run() {
             updater_status,
             updater_context,
             client_version_options,
+            client_storage_info,
+            clean_downloads,
+            clean_backups,
+            rollback_last_update,
             install_client_version,
             open_client_details_window,
             client_details_window_data,
@@ -78,6 +84,7 @@ pub fn run() {
             select_current_version,
             select_download_source,
             begin_update,
+            cancel_conflict_resolution,
             recheck_update,
             play_failure_sound,
             launch_client,

@@ -10,9 +10,11 @@ import {
 } from '../utils/tauri'
 import type { UpdaterMessageKey } from '../locales'
 import {
+	CLEAN_DOWNLOADS_AFTER_INSTALL_KEY,
 	SOURCE_KEY,
 	THEME_MODES,
 	type ClientInspection,
+	type ClientStorageInfo,
 	type ClientDetailsKind,
 	type ClientInstallMode,
 	type ClientVersionOption,
@@ -34,7 +36,15 @@ export function useUpdaterController() {
 		consoleOrigin: '',
 	})
 	const clientVersions = ref<ClientVersionOption[]>([])
+	const clientVersionsLoading = ref(false)
 	const currentClientVersion = ref<string | null>(null)
+	const storageInfo = ref<ClientStorageInfo>({
+		downloadsBytes: 0,
+		backupsBytes: 0,
+		rollbackAvailable: false,
+		rollbackFromVersion: null,
+		rollbackToVersion: null,
+	})
 	const status = ref<UpdaterStatus>({
 		mode: 'manual',
 		phase: 'starting',
@@ -45,7 +55,14 @@ export function useUpdaterController() {
 	const conflictSelections = ref<Record<string, string>>({})
 	const sources = ref<DownloadSource[]>([])
 	const sourceTesting = ref(false)
+	const downloadsCleaning = ref(false)
+	const backupsCleaning = ref(false)
+	const downloadsCleanupVersion = ref(0)
+	const backupsCleanupVersion = ref(0)
 	const selectedSource = ref(localStorage.getItem(SOURCE_KEY) ?? '')
+	const cleanDownloadsAfterInstall = ref(
+		localStorage.getItem(CLEAN_DOWNLOADS_AFTER_INSTALL_KEY) !== 'false',
+	)
 	const tab = ref<TabKey>('upgrade')
 	const loginBusy = ref(false)
 	let unlistenStatus: (() => void) | undefined
@@ -67,6 +84,8 @@ export function useUpdaterController() {
 	)
 	const processIcon = computed(() => {
 		if (status.value.phase === 'failed') return 'i-lucide-circle-alert'
+		if (status.value.phase === 'partial-update')
+			return 'i-lucide-triangle-alert'
 		if (status.value.phase === 'unknown-client') return 'i-lucide-circle-help'
 		if (['up-to-date', 'ready'].includes(status.value.phase))
 			return 'i-lucide-circle-check-big'
@@ -77,18 +96,22 @@ export function useUpdaterController() {
 			status.value.phase,
 		),
 	)
+	const failureTitleKey = computed<UpdaterMessageKey>(() =>
+		status.value.failureKind === 'check' ? 'statusCheckFailed' : 'statusFailed',
+	)
 	const phaseTitle = computed(() => {
 		const titles: Record<string, UpdaterMessageKey> = {
 			starting: 'statusStarting',
 			'awaiting-version': 'statusAwaitingVersion',
 			'checking-update': 'statusCheckingUpdate',
 			'awaiting-update-decision': 'statusAwaitingUpdateDecision',
+			'partial-update': 'statusPartialUpdate',
 			'unknown-client': 'statusUnknownClient',
 			updating: 'statusUpdating',
 			ready: 'statusReady',
 			'up-to-date': 'statusUpToDate',
-			failed: 'statusFailed',
 		}
+		if (status.value.phase === 'failed') return t(failureTitleKey.value)
 		const key = titles[status.value.phase]
 		return key ? t(key) : status.value.message || t('statusUnknown')
 	})
@@ -97,20 +120,20 @@ export function useUpdaterController() {
 		'awaiting-version': 'statusAwaitingVersion',
 		'checking-update': 'statusCheckingUpdate',
 		'awaiting-update-decision': 'statusAwaitingUpdateDecision',
+		'partial-update': 'statusPartialUpdate',
 		'unknown-client': 'statusUnknownClient',
 		updating: 'statusUpdating',
 		ready: 'statusReady',
 		'up-to-date': 'statusUpToDate',
-		failed: 'statusFailed',
 	}
 	const localizedStatusMessage = computed(() => {
+		if (status.value.phase === 'failed') {
+			const defaultMessage = t(failureTitleKey.value)
+			if (status.value.message && status.value.message !== defaultMessage)
+				return status.value.message
+			return defaultMessage
+		}
 		const key = phaseMessages[status.value.phase]
-		if (
-			status.value.phase === 'failed' &&
-			status.value.message &&
-			status.value.message !== t('statusFailed')
-		)
-			return status.value.message
 		return key ? t(key) : status.value.message
 	})
 	const phaseSubtitle = computed(() => {
@@ -256,20 +279,40 @@ export function useUpdaterController() {
 		conflictSelections.value = {}
 		await clearCurrentWindowAttention().catch(() => undefined)
 		try {
-			await invokeDesktop<void>('begin_update')
+			await invokeDesktop<void>('begin_update', {
+				cleanDownloadsAfterInstall: cleanDownloadsAfterInstall.value,
+			})
 		} catch (error) {
 			await nativeError(t('beginUpdateFailed', { error: String(error) }))
 		}
 	}
 
 	async function refreshClientVersions(): Promise<void> {
+		clientVersionsLoading.value = true
 		try {
 			clientVersions.value = await invokeDesktop<ClientVersionOption[]>(
 				'client_version_options',
 			)
 			clientVersionsLoaded = true
+		} catch {
+			// The failed check status is rendered in the updater content area.
+		} finally {
+			clientVersionsLoading.value = false
+		}
+	}
+
+	async function refreshCurrentClientVersion(): Promise<void> {
+		const inspection = await invokeDesktop<ClientInspection>('inspect_client')
+		currentClientVersion.value = inspection.version
+	}
+
+	async function refreshStorageInfo(): Promise<void> {
+		try {
+			storageInfo.value = await invokeDesktop<ClientStorageInfo>(
+				'client_storage_info',
+			)
 		} catch (error) {
-			await nativeError(t('readClientVersionsFailed', { error: String(error) }))
+			await nativeError(t('readStorageInfoFailed', { error: String(error) }))
 		}
 	}
 
@@ -282,9 +325,54 @@ export function useUpdaterController() {
 		tab.value = 'upgrade'
 		await clearCurrentWindowAttention().catch(() => undefined)
 		try {
-			await invokeDesktop<void>('install_client_version', { version, mode })
+			await invokeDesktop<void>('install_client_version', {
+				version,
+				mode,
+				cleanDownloadsAfterInstall: cleanDownloadsAfterInstall.value,
+			})
 		} catch (error) {
 			await nativeError(t('installClientFailed', { error: String(error) }))
+		}
+	}
+
+	function setCleanDownloadsAfterInstall(value: boolean): void {
+		cleanDownloadsAfterInstall.value = value
+		localStorage.setItem(CLEAN_DOWNLOADS_AFTER_INSTALL_KEY, String(value))
+	}
+
+	async function cleanDownloads(): Promise<void> {
+		downloadsCleaning.value = true
+		try {
+			storageInfo.value =
+				await invokeDesktop<ClientStorageInfo>('clean_downloads')
+			downloadsCleanupVersion.value += 1
+		} catch (error) {
+			await nativeError(t('cleanDownloadsFailed', { error: String(error) }))
+		} finally {
+			downloadsCleaning.value = false
+		}
+	}
+
+	async function cleanBackups(): Promise<void> {
+		backupsCleaning.value = true
+		try {
+			storageInfo.value =
+				await invokeDesktop<ClientStorageInfo>('clean_backups')
+			backupsCleanupVersion.value += 1
+		} catch (error) {
+			await nativeError(t('cleanBackupsFailed', { error: String(error) }))
+		} finally {
+			backupsCleaning.value = false
+		}
+	}
+
+	async function rollbackLastUpdate(): Promise<void> {
+		try {
+			await invokeDesktop<void>('rollback_last_update')
+			await Promise.all([refreshCurrentClientVersion(), refreshStorageInfo()])
+			await recheckUpdate()
+		} catch (error) {
+			await nativeError(t('rollbackFailed', { error: String(error) }))
 		}
 	}
 
@@ -327,6 +415,15 @@ export function useUpdaterController() {
 		const next = await invokeDesktop<UpdaterStatus>('resolve_conflicts', {
 			resolutions,
 		})
+		await applyStatus(next)
+	}
+
+	async function cancelConflictResolution(): Promise<void> {
+		conflicts.value = []
+		conflictSelections.value = {}
+		const next = await invokeDesktop<UpdaterStatus>(
+			'cancel_conflict_resolution',
+		)
 		await applyStatus(next)
 	}
 
@@ -385,7 +482,11 @@ export function useUpdaterController() {
 		if (next.phase === 'awaiting-version') await openVersionWindowIfAvailable()
 		if (next.phase === 'awaiting-conflict-resolution') await loadConflicts()
 		if (next.phase === 'awaiting-update-decision') {
-			await loadSources()
+			await Promise.all([loadSources(), refreshClientVersions()])
+		}
+		if (next.phase === 'ready') {
+			await refreshCurrentClientVersion()
+			await refreshStorageInfo()
 		}
 		if (next.phase === 'authenticated') {
 			await refreshIdentity()
@@ -406,6 +507,7 @@ export function useUpdaterController() {
 			await notifyFailure()
 		}
 		await refreshClientVersions()
+		await refreshStorageInfo()
 		const inspection = await invokeDesktop<ClientInspection>('inspect_client')
 		currentClientVersion.value = inspection.version
 		if (
@@ -477,9 +579,11 @@ export function useUpdaterController() {
 		appName,
 		authenticated,
 		clientVersions,
+		clientVersionsLoading,
 		conflictSelections,
 		conflicts,
 		currentClientVersion,
+		storageInfo,
 		context,
 		displayName,
 		identity,
@@ -495,6 +599,8 @@ export function useUpdaterController() {
 		selectTheme,
 		selectedLocale: locale,
 		selectedSource,
+		cleanDownloadsAfterInstall,
+		setCleanDownloadsAfterInstall,
 		showProcessSpinner,
 		sourceItems,
 		sources,
@@ -508,6 +614,13 @@ export function useUpdaterController() {
 		themeMode,
 		themeModes: THEME_MODES,
 		beginUpdate,
+		cleanDownloads,
+		cleanBackups,
+		downloadsCleaning,
+		backupsCleaning,
+		downloadsCleanupVersion,
+		backupsCleanupVersion,
+		cancelConflictResolution,
 		installClientVersion,
 		dragFromAside,
 		launchClient,
@@ -520,6 +633,7 @@ export function useUpdaterController() {
 		retryUpdate,
 		recheckUpdate,
 		resolveConflicts,
+		rollbackLastUpdate,
 		selectConflictResolution,
 	}
 }

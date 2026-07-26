@@ -5,14 +5,24 @@ pub async fn execute_update(
     mut selected_version: Option<String>,
     source_key: Option<String>,
 ) {
+    let clean_downloads_after_install = *state.clean_downloads_after_install.read().await;
+    let mut updated = false;
     loop {
         match engine::apply_next(&state, selected_version.take(), source_key.clone()).await {
-            Ok(Some(version)) => {
+            Ok(engine::ApplyResult::Updated(version)) => {
+                updated = true;
                 state
                     .set_status("updating", &format!("客户端正在更新至 {version}"), None)
                     .await;
             }
-            Ok(None) => {
+            Ok(engine::ApplyResult::PartiallyApplied) => {
+                state.set_status("partial-update", "", None).await;
+                break;
+            }
+            Ok(engine::ApplyResult::UpToDate) => {
+                if updated && clean_downloads_after_install {
+                    let _ = engine::clean_downloads(&state.game_dir);
+                }
                 state.set_status("ready", "客户端已准备就绪", None).await;
                 break;
             }
@@ -97,6 +107,9 @@ pub fn spawn_update(
 pub async fn execute_client_install(state: UpdaterState, version: String, mode: String) {
     match engine::install_client_version(&state, &version, &mode).await {
         Ok(()) => {
+            if *state.clean_downloads_after_install.read().await {
+                let _ = engine::clean_downloads(&state.game_dir);
+            }
             *state.selected_version.write().await = Some(version.clone());
             state
                 .set_status_with_versions(

@@ -1,5 +1,6 @@
 use super::{ClientFullPackageDownload, EngineError};
 use crate::{
+    auth,
     contracts::{DownloadProgress, MigrationEnvelope},
     state::UpdaterState,
 };
@@ -205,6 +206,9 @@ pub(super) async fn fetch_next(
     version: &str,
     source_key: Option<&str>,
 ) -> Result<Option<MigrationEnvelope>, EngineError> {
+    auth::ensure_desktop_session(state)
+        .await
+        .map_err(EngineError::Message)?;
     let mut request = reqwest::Client::new()
         .get(format!(
             "{}/api/updater/migrations/next",
@@ -233,6 +237,9 @@ pub(super) async fn check_next(
     state: &UpdaterState,
     version: &str,
 ) -> Result<super::ClientUpdateCheck, EngineError> {
+    auth::ensure_desktop_session(state)
+        .await
+        .map_err(EngineError::Message)?;
     let mut request = reqwest::Client::new()
         .get(format!(
             "{}/api/updater/check",
@@ -271,6 +278,9 @@ pub(super) async fn list_sources(
     state: &UpdaterState,
     locale: &str,
 ) -> Result<Vec<super::DownloadSource>, EngineError> {
+    auth::ensure_desktop_session(state)
+        .await
+        .map_err(EngineError::Message)?;
     let mut request = reqwest::Client::new()
         .get(format!(
             "{}/api/updater/sources?locale={locale}",

@@ -1,8 +1,8 @@
 use crate::contracts::{DownloadProgress, OperationProgress, UpdateConflict, UpdaterStatus};
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, path::PathBuf, sync::Arc};
+use std::{collections::HashMap, path::PathBuf, sync::Arc, time::Instant};
 use tauri::{AppHandle, Emitter};
-use tokio::sync::RwLock;
+use tokio::sync::{Mutex, RwLock};
 
 #[derive(Clone)]
 pub struct UpdaterState {
@@ -13,7 +13,10 @@ pub struct UpdaterState {
     pub status: Arc<RwLock<UpdaterStatus>>,
     pub selected_version: Arc<RwLock<Option<String>>>,
     pub selected_source: Arc<RwLock<Option<String>>>,
+    pub clean_downloads_after_install: Arc<RwLock<bool>>,
     pub access_token: Arc<RwLock<Option<String>>>,
+    pub access_token_expires_at: Arc<RwLock<Option<Instant>>>,
+    pub auth_refresh_lock: Arc<Mutex<()>>,
     pub identity: Arc<RwLock<Option<DesktopIdentity>>>,
     pub conflicts: Arc<RwLock<Vec<UpdateConflict>>>,
     pub resolutions: Arc<RwLock<HashMap<String, String>>>,
@@ -40,7 +43,10 @@ impl UpdaterState {
             })),
             selected_version: Arc::new(RwLock::new(None)),
             selected_source: Arc::new(RwLock::new(None)),
+            clean_downloads_after_install: Arc::new(RwLock::new(false)),
             access_token: Arc::new(RwLock::new(None)),
+            access_token_expires_at: Arc::new(RwLock::new(None)),
+            auth_refresh_lock: Arc::new(Mutex::new(())),
             identity: Arc::new(RwLock::new(None)),
             conflicts: Arc::new(RwLock::new(Vec::new())),
             resolutions: Arc::new(RwLock::new(HashMap::new())),
