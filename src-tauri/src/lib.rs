@@ -18,7 +18,7 @@ use commands::{
 };
 use state::UpdaterState;
 use std::{env, path::PathBuf};
-use tauri::Manager;
+use tauri::{Manager, WindowEvent};
 use tauri_plugin_deep_link::DeepLinkExt;
 
 pub fn run() {
@@ -44,6 +44,7 @@ pub fn run() {
     {
         builder = builder.plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
             if let Some(main) = app.get_webview_window("main") {
+                let _ = main.unminimize();
                 let _ = main.show();
                 let _ = main.set_focus();
             }
@@ -54,6 +55,11 @@ pub fn run() {
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        .on_window_event(|window, event| {
+            if window.label() == "main" && matches!(event, WindowEvent::CloseRequested { .. }) {
+                window.app_handle().exit(0);
+            }
+        })
         .manage(state)
         .setup(move |app| {
             #[cfg(any(target_os = "linux", all(debug_assertions, windows)))]
