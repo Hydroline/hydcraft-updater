@@ -1,6 +1,12 @@
 branch:
   - reg: ^main$
     buttons:
-      - name: Deploy updater
-        description: Build both native updater artifacts and publish them to COS
+      - name: 构建并发布 Updater
+        description: 在 CNB 构建 Windows 与 macOS Updater 并发布到 COS
         event: web_trigger_updater_deploy
+        groupName: 生产部署
+        isDefault: true
+        permissions:
+          roles:
+            - owner
+            - master

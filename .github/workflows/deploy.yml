@@ -11,7 +11,9 @@ jobs:
     name: Sync and trigger CNB updater build
     runs-on: ubuntu-latest
     concurrency:
-      group: cnb-updater-deploy
+      # Deploys use immutable release/<sha> branches, so different commits can
+      # build in parallel while duplicate runs for one commit stay serialized.
+      group: cnb-updater-deploy-${{ github.sha }}
       cancel-in-progress: false
     env:
       CNB_REPOSITORY_SLUG: ${{ vars.CNB_REPOSITORY_SLUG }}
@@ -20,7 +22,9 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: main
+          # Pin the manual run to the commit captured when it was queued.
+          # The release branch below keeps the CNB build immutable.
+          ref: ${{ github.sha }}
           fetch-depth: 0
 
       - name: Read source commit
