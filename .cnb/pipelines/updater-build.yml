@@ -9,15 +9,10 @@
       timeout: 2h
       script: |
         set -eu
+        export CNB_REPOSITORY_SLUG="${HYDCRAFT_CNB_REPOSITORY_SLUG:-$CNB_REPO_SLUG}"
         apt-get update
-        apt-get install -y --no-install-recommends ca-certificates curl unzip
+        apt-get install -y --no-install-recommends ca-certificates curl rclone
         rm -rf /var/lib/apt/lists/*
-
-        curl --fail --location --retry 3 \
-          --output /tmp/rclone.zip \
-          https://downloads.rclone.org/rclone-current-linux-amd64.zip
-        unzip -q /tmp/rclone.zip -d /tmp/rclone
-        install /tmp/rclone/rclone-*/rclone /usr/local/bin/rclone
 
         test -n "${SOURCE_SHA:-}"
         test -n "${WINDOWS_ASSET_NAME:-}"
@@ -26,7 +21,7 @@
         curl --fail --location --retry 3 \
           --header "Authorization: Bearer $CNB_TOKEN" \
           --output "artifacts/$WINDOWS_ASSET_NAME" \
-          "https://cnb.cool/$HYDCRAFT_CNB_REPOSITORY_SLUG/-/commit-assets/download/$SOURCE_SHA/$WINDOWS_ASSET_NAME?share=true"
+          "https://cnb.cool/$CNB_REPOSITORY_SLUG/-/commit-assets/download/$SOURCE_SHA/$WINDOWS_ASSET_NAME?share=true"
         node scripts/publish-updater.mjs \
           --platform windows-x86_64 \
           --artifact "artifacts/$WINDOWS_ASSET_NAME" \
@@ -48,15 +43,10 @@
       timeout: 2h
       script: |
         set -eu
+        export CNB_REPOSITORY_SLUG="${HYDCRAFT_CNB_REPOSITORY_SLUG:-$CNB_REPO_SLUG}"
         apt-get update
-        apt-get install -y --no-install-recommends ca-certificates curl unzip
+        apt-get install -y --no-install-recommends ca-certificates curl rclone
         rm -rf /var/lib/apt/lists/*
-
-        curl --fail --location --retry 3 \
-          --output /tmp/rclone.zip \
-          https://downloads.rclone.org/rclone-current-linux-amd64.zip
-        unzip -q /tmp/rclone.zip -d /tmp/rclone
-        install /tmp/rclone/rclone-*/rclone /usr/local/bin/rclone
 
         test -n "${SOURCE_SHA:-}"
         test -n "${MACOS_ASSET_NAME:-}"
@@ -65,7 +55,7 @@
         curl --fail --location --retry 3 \
           --header "Authorization: Bearer $CNB_TOKEN" \
           --output "artifacts/$MACOS_ASSET_NAME" \
-          "https://cnb.cool/$HYDCRAFT_CNB_REPOSITORY_SLUG/-/commit-assets/download/$SOURCE_SHA/$MACOS_ASSET_NAME?share=true"
+          "https://cnb.cool/$CNB_REPOSITORY_SLUG/-/commit-assets/download/$SOURCE_SHA/$MACOS_ASSET_NAME?share=true"
         node scripts/publish-updater.mjs \
           --platform macos-universal \
           --artifact "artifacts/$MACOS_ASSET_NAME" \
