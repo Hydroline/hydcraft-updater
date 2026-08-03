@@ -48,7 +48,9 @@ jobs:
     name: Build and upload ${{ matrix.platform }}
     needs: sync
     strategy:
-      fail-fast: true
+      # Keep platform results independent: a failed upload on one runner must
+      # not cancel the other native build before it can report its own result.
+      fail-fast: false
       matrix:
         include:
           - platform: windows-x86_64

@@ -29,6 +29,9 @@ const assetName = requiredArgument('name')
 const apiOrigin = (
 	process.env.CNB_API_ORIGIN ?? 'https://api.cnb.cool'
 ).replace(/\/$/, '')
+// CNB accepts attachment TTL in days (maximum 180). These files are only the
+// hand-off between GitHub's native build and the CNB publish pipeline.
+const attachmentTtlDays = 1
 
 if (!/^[0-9a-f]{40}$/i.test(commit))
 	throw new Error('--commit must be a 40-character commit SHA')
@@ -86,7 +89,7 @@ const uploadInfo = await requestJson(`${assetListUrl}/asset-upload-url`, {
 	body: JSON.stringify({
 		asset_name: assetName,
 		size: artifactInfo.size,
-		ttl: 3600,
+		ttl: attachmentTtlDays,
 	}),
 })
 const uploadUrl = uploadInfo?.upload_url ?? uploadInfo?.data?.upload_url
