@@ -19,7 +19,9 @@
 
         test -n "${SOURCE_SHA:-}"
         test -n "${WINDOWS_ASSET_NAME:-}"
-        test "${CNB_COMMIT:-}" = "$SOURCE_SHA"
+        if [ "${CNB_EVENT:-}" != 'web_trigger_updater_publish' ]; then
+          test "${CNB_COMMIT:-}" = "$SOURCE_SHA"
+        fi
         mkdir -p artifacts
         curl --fail --location --retry 3 \
           --output "artifacts/$WINDOWS_ASSET_NAME" \
@@ -57,7 +59,9 @@
 
         test -n "${SOURCE_SHA:-}"
         test -n "${MACOS_ASSET_NAME:-}"
-        test "${CNB_COMMIT:-}" = "$SOURCE_SHA"
+        if [ "${CNB_EVENT:-}" != 'web_trigger_updater_publish' ]; then
+          test "${CNB_COMMIT:-}" = "$SOURCE_SHA"
+        fi
         mkdir -p artifacts
         curl --fail --location --retry 3 \
           --output "artifacts/$MACOS_ASSET_NAME" \

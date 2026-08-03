@@ -10,3 +10,9 @@ branch:
           roles:
             - owner
             - master
+        inputs:
+          SOURCE_SHA:
+            name: 构建 Commit
+            description: 留空则使用当前 main；仅填写与当前版本一致且已上传 CNB 附件的 40 位 Commit SHA
+            placeholder: 例如 f4980e9d21b72b18f1ff37fa519e563a2dbb4d27
+            type: input
