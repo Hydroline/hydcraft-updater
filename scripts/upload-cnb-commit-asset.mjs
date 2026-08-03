@@ -101,6 +101,8 @@ const uploadResponse = await fetch(uploadUrl, {
 	method: 'PUT',
 	body: content,
 	headers: {
+		accept: 'application/json',
+		authorization: `Bearer ${token}`,
 		'content-type': 'application/octet-stream',
 		'content-length': String(content.byteLength),
 	},

@@ -3,6 +3,7 @@ allow_slugs:
   - HydCraft/hydcraft-updater
 allow_events:
   - api_trigger_updater_deploy
+  - web_trigger_updater_publish
 allow_branches: 'release/*'
 
 # Tencent Cloud COS S3-compatible write target. The prefix is deliberately

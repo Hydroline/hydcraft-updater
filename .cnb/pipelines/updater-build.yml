@@ -10,6 +10,9 @@
       script: |
         set -eu
         export CNB_REPOSITORY_SLUG="${HYDCRAFT_CNB_REPOSITORY_SLUG:-$CNB_REPO_SLUG}"
+        export SOURCE_SHA="${SOURCE_SHA:-$CNB_COMMIT}"
+        export WINDOWS_ASSET_NAME="${WINDOWS_ASSET_NAME:-hydcraft-updater.exe}"
+        export MACOS_ASSET_NAME="${MACOS_ASSET_NAME:-hydcraft-updater}"
         apt-get update
         apt-get install -y --no-install-recommends ca-certificates curl rclone
         rm -rf /var/lib/apt/lists/*
@@ -19,17 +22,18 @@
         test "${CNB_COMMIT:-}" = "$SOURCE_SHA"
         mkdir -p artifacts
         curl --fail --location --retry 3 \
-          --header "Authorization: Bearer $CNB_TOKEN" \
           --output "artifacts/$WINDOWS_ASSET_NAME" \
           "https://cnb.cool/$CNB_REPOSITORY_SLUG/-/commit-assets/download/$SOURCE_SHA/$WINDOWS_ASSET_NAME?share=true"
-        node scripts/publish-updater.mjs \
+        HYDCRAFT_PUBLISH_RESULT_PATH=artifacts/publish-result.json node scripts/publish-updater.mjs \
           --platform windows-x86_64 \
           --artifact "artifacts/$WINDOWS_ASSET_NAME" \
           --commit "$SOURCE_SHA"
-        if ! node scripts/delete-cnb-commit-asset.mjs \
-          --commit "$SOURCE_SHA" \
-          --name "$WINDOWS_ASSET_NAME"; then
-          echo 'CNB_COMMIT_ATTACHMENT_CLEANUP_FAILED: Windows attachment will expire within one day.' >&2
+        if node -e "process.exit(JSON.parse(require('node:fs').readFileSync(process.argv[1], 'utf8')).published === true ? 0 : 1)" artifacts/publish-result.json; then
+          for asset_name in "$WINDOWS_ASSET_NAME" "$MACOS_ASSET_NAME"; do
+            if ! node scripts/delete-cnb-commit-asset.mjs --commit "$SOURCE_SHA" --name "$asset_name"; then
+              echo "CNB_COMMIT_ATTACHMENT_CLEANUP_FAILED: $asset_name will expire within one day." >&2
+            fi
+          done
         fi
 
 .updater_macos: &updater_macos
@@ -44,6 +48,9 @@
       script: |
         set -eu
         export CNB_REPOSITORY_SLUG="${HYDCRAFT_CNB_REPOSITORY_SLUG:-$CNB_REPO_SLUG}"
+        export SOURCE_SHA="${SOURCE_SHA:-$CNB_COMMIT}"
+        export WINDOWS_ASSET_NAME="${WINDOWS_ASSET_NAME:-hydcraft-updater.exe}"
+        export MACOS_ASSET_NAME="${MACOS_ASSET_NAME:-hydcraft-updater}"
         apt-get update
         apt-get install -y --no-install-recommends ca-certificates curl rclone
         rm -rf /var/lib/apt/lists/*
@@ -53,20 +60,24 @@
         test "${CNB_COMMIT:-}" = "$SOURCE_SHA"
         mkdir -p artifacts
         curl --fail --location --retry 3 \
-          --header "Authorization: Bearer $CNB_TOKEN" \
           --output "artifacts/$MACOS_ASSET_NAME" \
           "https://cnb.cool/$CNB_REPOSITORY_SLUG/-/commit-assets/download/$SOURCE_SHA/$MACOS_ASSET_NAME?share=true"
-        node scripts/publish-updater.mjs \
+        HYDCRAFT_PUBLISH_RESULT_PATH=artifacts/publish-result.json node scripts/publish-updater.mjs \
           --platform macos-universal \
           --artifact "artifacts/$MACOS_ASSET_NAME" \
           --commit "$SOURCE_SHA"
-        if ! node scripts/delete-cnb-commit-asset.mjs \
-          --commit "$SOURCE_SHA" \
-          --name "$MACOS_ASSET_NAME"; then
-          echo 'CNB_COMMIT_ATTACHMENT_CLEANUP_FAILED: macOS attachment will expire within one day.' >&2
+        if node -e "process.exit(JSON.parse(require('node:fs').readFileSync(process.argv[1], 'utf8')).published === true ? 0 : 1)" artifacts/publish-result.json; then
+          for asset_name in "$WINDOWS_ASSET_NAME" "$MACOS_ASSET_NAME"; do
+            if ! node scripts/delete-cnb-commit-asset.mjs --commit "$SOURCE_SHA" --name "$asset_name"; then
+              echo "CNB_COMMIT_ATTACHMENT_CLEANUP_FAILED: $asset_name will expire within one day." >&2
+            fi
+          done
         fi
 
 'release/*':
   api_trigger_updater_deploy:
+    - <<: *updater_windows
+    - <<: *updater_macos
+  web_trigger_updater_publish:
     - <<: *updater_windows
     - <<: *updater_macos

@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { readFile, stat } from 'node:fs/promises'
+import { readFile, stat, writeFile } from 'node:fs/promises'
 import { basename, resolve } from 'node:path'
 import { spawn } from 'node:child_process'
 
@@ -168,14 +168,16 @@ const main = async () => {
 			)
 		}
 	}
-	console.log(
-		JSON.stringify({
-			uploaded: true,
-			...payload,
-			published: responseBody?.published === true,
-			cleanedObjectKeys: cleanupObjectKeys,
-		}),
-	)
+	const result = {
+		uploaded: true,
+		...payload,
+		published: responseBody?.published === true,
+		cleanedObjectKeys: cleanupObjectKeys,
+	}
+	const resultPath = process.env.HYDCRAFT_PUBLISH_RESULT_PATH?.trim()
+	if (resultPath)
+		await writeFile(resolve(resultPath), JSON.stringify(result), 'utf8')
+	console.log(JSON.stringify(result))
 }
 
 main().catch((error) => {
