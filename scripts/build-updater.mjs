@@ -24,7 +24,13 @@ if (!target)
 
 const run = (command, args) =>
 	new Promise((resolveProcess, rejectProcess) => {
-		const child = spawn(command, args, { stdio: 'inherit' })
+		// Windows package-manager shims such as pnpm.cmd must be launched through
+		// the shell; spawning the .cmd file directly returns EINVAL on GitHub-hosted
+		// Windows runners.
+		const child = spawn(command, args, {
+			stdio: 'inherit',
+			shell: process.platform === 'win32',
+		})
 		child.once('error', rejectProcess)
 		child.once('exit', (code, signal) =>
 			code === 0
