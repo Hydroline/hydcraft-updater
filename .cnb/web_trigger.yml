@@ -1,0 +1,6 @@
+branch:
+  - reg: ^main$
+    buttons:
+      - name: Deploy updater
+        description: Build both native updater artifacts and publish them to COS
+        event: web_trigger_updater_deploy

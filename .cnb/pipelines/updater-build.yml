@@ -1,0 +1,38 @@
+.updater_windows: &updater_windows
+  name: Build Windows updater
+  runner:
+    namespace: group
+    tags:
+      - windows
+  imports:
+    - https://cnb.cool/HydCraft/hydcraft-secrets/-/blob/main/hydcraft-updater-deploy.yml
+  stages:
+    - name: Build and publish Windows updater
+      timeout: 12h
+      script: node scripts/build-and-publish-updater.mjs windows-x86_64
+
+.updater_macos: &updater_macos
+  name: Build macOS updater
+  runner:
+    namespace: group
+    tags:
+      - mac
+  imports:
+    - https://cnb.cool/HydCraft/hydcraft-secrets/-/blob/main/hydcraft-updater-deploy.yml
+  stages:
+    - name: Build and publish macOS updater
+      timeout: 12h
+      script: node scripts/build-and-publish-updater.mjs macos-universal
+
+main:
+  web_trigger_updater_deploy:
+    - <<: *updater_windows
+    - <<: *updater_macos
+  api_trigger_updater_deploy:
+    - <<: *updater_windows
+    - <<: *updater_macos
+
+'release/*':
+  api_trigger_updater_deploy:
+    - <<: *updater_windows
+    - <<: *updater_macos

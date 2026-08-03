@@ -1,0 +1,28 @@
+# Copy this file to HydCraft/hydcraft-secrets as hydcraft-updater-deploy.yml.
+allow_slugs:
+  - HydCraft/hydcraft-updater
+allow_events:
+  - web_trigger_updater_deploy
+  - api_trigger_updater_deploy
+allow_branches:
+  - main
+  - 'release/*'
+
+# Self-hosted CNB Runner prerequisites (installed on the host, not secrets):
+# Node.js 24, pnpm 10.14.0, Rust stable with the MSVC toolchain on Windows,
+# Xcode command-line tools on macOS, and rclone 1.66+ in PATH.
+
+# Tencent Cloud COS S3-compatible write target. The prefix is deliberately
+# separate so existing objects in the bucket remain untouched.
+HYDCRAFT_COS_BUCKET: hydcraft-download-1254268741
+HYDCRAFT_COS_ENDPOINT: https://cos.ap-shanghai.myqcloud.com
+HYDCRAFT_COS_REGION: ap-shanghai
+HYDCRAFT_COS_PREFIX: updater
+COS_ACCESS_KEY_ID: replace-with-cos-secret-id
+COS_SECRET_ACCESS_KEY: replace-with-cos-secret-key
+
+# Console is only the metadata/control-plane callback. It does not receive
+# COS credentials; Console resolves objectKey through the configured dl-updater source.
+HYDCRAFT_CONSOLE_ORIGIN: https://console.hydcraft.cn
+HYDCRAFT_CONSOLE_PUBLISH_PATH: /api/publish/updater-artifacts
+HYDCRAFT_PUBLISH_API_TOKEN: replace-with-updater-publish-token
