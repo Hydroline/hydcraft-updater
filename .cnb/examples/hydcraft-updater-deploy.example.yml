@@ -2,15 +2,12 @@
 allow_slugs:
   - HydCraft/hydcraft-updater
 allow_events:
-  - web_trigger_updater_deploy
   - api_trigger_updater_deploy
-allow_branches:
-  - main
-  - 'release/*'
+allow_branches: 'release/*'
 
-# Self-hosted CNB Runner prerequisites (installed on the host, not secrets):
-# Node.js 24, pnpm 10.14.0, Rust stable with the MSVC toolchain on Windows,
-# Xcode command-line tools on macOS, and rclone 1.66+ in PATH.
+# CNB only publishes Linux-side; GitHub Actions builds the native Windows/macOS
+# artifacts and uploads them as commit attachments before triggering CNB.
+HYDCRAFT_CNB_REPOSITORY_SLUG: HydCraft/hydcraft-updater
 
 # Tencent Cloud COS S3-compatible write target. The prefix is deliberately
 # separate so existing objects in the bucket remain untouched.

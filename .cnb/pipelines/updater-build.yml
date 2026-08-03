@@ -1,36 +1,70 @@
 .updater_windows: &updater_windows
-  name: Build Windows updater
-  runner:
-    namespace: group
-    tags:
-      - windows
+  name: Publish Windows updater
+  docker:
+    image: node:24-bookworm
   imports:
     - https://cnb.cool/HydCraft/hydcraft-secrets/-/blob/main/hydcraft-updater-deploy.yml
   stages:
-    - name: Build and publish Windows updater
-      timeout: 12h
-      script: node scripts/build-and-publish-updater.mjs windows-x86_64
+    - name: Download and publish Windows updater
+      timeout: 2h
+      script: |
+        set -eu
+        apt-get update
+        apt-get install -y --no-install-recommends ca-certificates curl unzip
+        rm -rf /var/lib/apt/lists/*
+
+        curl --fail --location --retry 3 \
+          --output /tmp/rclone.zip \
+          https://downloads.rclone.org/rclone-current-linux-amd64.zip
+        unzip -q /tmp/rclone.zip -d /tmp/rclone
+        install /tmp/rclone/rclone-*/rclone /usr/local/bin/rclone
+
+        test -n "${SOURCE_SHA:-}"
+        test -n "${WINDOWS_ASSET_NAME:-}"
+        test "${CNB_COMMIT:-}" = "$SOURCE_SHA"
+        mkdir -p artifacts
+        curl --fail --location --retry 3 \
+          --header "Authorization: Bearer $CNB_TOKEN" \
+          --output "artifacts/$WINDOWS_ASSET_NAME" \
+          "https://cnb.cool/$HYDCRAFT_CNB_REPOSITORY_SLUG/-/commit-assets/download/$SOURCE_SHA/$WINDOWS_ASSET_NAME?share=true"
+        node scripts/publish-updater.mjs \
+          --platform windows-x86_64 \
+          --artifact "artifacts/$WINDOWS_ASSET_NAME" \
+          --commit "$SOURCE_SHA"
 
 .updater_macos: &updater_macos
-  name: Build macOS updater
-  runner:
-    namespace: group
-    tags:
-      - mac
+  name: Publish macOS updater
+  docker:
+    image: node:24-bookworm
   imports:
     - https://cnb.cool/HydCraft/hydcraft-secrets/-/blob/main/hydcraft-updater-deploy.yml
   stages:
-    - name: Build and publish macOS updater
-      timeout: 12h
-      script: node scripts/build-and-publish-updater.mjs macos-universal
+    - name: Download and publish macOS updater
+      timeout: 2h
+      script: |
+        set -eu
+        apt-get update
+        apt-get install -y --no-install-recommends ca-certificates curl unzip
+        rm -rf /var/lib/apt/lists/*
 
-main:
-  web_trigger_updater_deploy:
-    - <<: *updater_windows
-    - <<: *updater_macos
-  api_trigger_updater_deploy:
-    - <<: *updater_windows
-    - <<: *updater_macos
+        curl --fail --location --retry 3 \
+          --output /tmp/rclone.zip \
+          https://downloads.rclone.org/rclone-current-linux-amd64.zip
+        unzip -q /tmp/rclone.zip -d /tmp/rclone
+        install /tmp/rclone/rclone-*/rclone /usr/local/bin/rclone
+
+        test -n "${SOURCE_SHA:-}"
+        test -n "${MACOS_ASSET_NAME:-}"
+        test "${CNB_COMMIT:-}" = "$SOURCE_SHA"
+        mkdir -p artifacts
+        curl --fail --location --retry 3 \
+          --header "Authorization: Bearer $CNB_TOKEN" \
+          --output "artifacts/$MACOS_ASSET_NAME" \
+          "https://cnb.cool/$HYDCRAFT_CNB_REPOSITORY_SLUG/-/commit-assets/download/$SOURCE_SHA/$MACOS_ASSET_NAME?share=true"
+        node scripts/publish-updater.mjs \
+          --platform macos-universal \
+          --artifact "artifacts/$MACOS_ASSET_NAME" \
+          --commit "$SOURCE_SHA"
 
 'release/*':
   api_trigger_updater_deploy:

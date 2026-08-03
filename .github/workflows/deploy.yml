@@ -6,42 +6,30 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  # A source commit has one immutable pair of CNB commit attachments.
+  group: cnb-updater-deploy-${{ github.sha }}
+  cancel-in-progress: false
+
 jobs:
-  trigger:
-    name: Sync and trigger CNB updater build
+  sync:
+    name: Sync immutable release branch to CNB
     runs-on: ubuntu-latest
-    concurrency:
-      # Deploys use immutable release/<sha> branches, so different commits can
-      # build in parallel while duplicate runs for one commit stay serialized.
-      group: cnb-updater-deploy-${{ github.sha }}
-      cancel-in-progress: false
     env:
       CNB_REPOSITORY_SLUG: ${{ vars.CNB_REPOSITORY_SLUG }}
       CNB_TOKEN: ${{ secrets.CNB_TOKEN }}
-      CNB_API_TOKEN: ${{ secrets.CNB_API_TOKEN }}
     steps:
       - uses: actions/checkout@v6
         with:
-          # Pin the manual run to the commit captured when it was queued.
-          # The release branch below keeps the CNB build immutable.
           ref: ${{ github.sha }}
           fetch-depth: 0
-
-      - name: Read source commit
-        id: source
-        shell: bash
-        run: |
-          sha="$(git rev-parse HEAD)"
-          echo "sha=$sha" >> "$GITHUB_OUTPUT"
-          echo "branch=release/$sha" >> "$GITHUB_OUTPUT"
 
       - name: Validate CNB configuration
         run: |
           test -n "$CNB_REPOSITORY_SLUG" || { echo 'CNB_REPOSITORY_SLUG is required.' >&2; exit 1; }
           test -n "$CNB_TOKEN" || { echo 'CNB_TOKEN is required.' >&2; exit 1; }
-          test -n "$CNB_API_TOKEN" || { echo 'CNB_API_TOKEN is required.' >&2; exit 1; }
 
-      - name: Sync immutable release branch to CNB
+      - name: Sync immutable release branch
         run: |
           docker run --rm \
             -v "$GITHUB_WORKSPACE:$GITHUB_WORKSPACE" \
@@ -50,25 +38,86 @@ jobs:
             -e 'PLUGIN_AUTH_TYPE=https' \
             -e 'PLUGIN_USERNAME=cnb' \
             -e "PLUGIN_PASSWORD=$CNB_TOKEN" \
-            -e "PLUGIN_BRANCH=release/${{ steps.source.outputs.sha }}" \
+            -e "PLUGIN_BRANCH=release/$GITHUB_SHA" \
             -e 'PLUGIN_GIT_USER=cnb' \
             -e 'PLUGIN_GIT_EMAIL=cnb@cnb.cool' \
             -e 'PLUGIN_FORCE=true' \
             tencentcom/git-sync
 
-      - name: Trigger CNB native build
-        env:
-          SOURCE_SHA: ${{ steps.source.outputs.sha }}
-          CNB_BRANCH: ${{ steps.source.outputs.branch }}
+  build:
+    name: Build and upload ${{ matrix.platform }}
+    needs: sync
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - platform: windows-x86_64
+            runner: windows-latest
+            asset_name: hydcraft-updater.exe
+          - platform: macos-universal
+            runner: macos-latest
+            asset_name: hydcraft-updater
+    runs-on: ${{ matrix.runner }}
+    env:
+      CNB_REPOSITORY_SLUG: ${{ vars.CNB_REPOSITORY_SLUG }}
+      CNB_TOKEN: ${{ secrets.CNB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.14.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build native updater
+        run: node scripts/build-updater.mjs ${{ matrix.platform }}
+
+      - name: Upload build to CNB commit attachments
+        shell: bash
+        run: |
+          node scripts/upload-cnb-commit-asset.mjs \
+            --commit "$GITHUB_SHA" \
+            --artifact "$(if [ "${{ matrix.platform }}" = "windows-x86_64" ]; then printf '%s' 'src-tauri/target/x86_64-pc-windows-msvc/release/hydcraft-updater.exe'; else printf '%s' 'src-tauri/target/universal-apple-darwin/release/hydcraft-updater'; fi)" \
+            --name "${{ matrix.asset_name }}"
+
+  trigger:
+    name: Trigger CNB publish pipeline
+    needs: build
+    runs-on: ubuntu-latest
+    env:
+      CNB_REPOSITORY_SLUG: ${{ vars.CNB_REPOSITORY_SLUG }}
+      CNB_API_TOKEN: ${{ secrets.CNB_API_TOKEN }}
+    steps:
+      - name: Validate CNB configuration
+        run: |
+          test -n "$CNB_REPOSITORY_SLUG" || { echo 'CNB_REPOSITORY_SLUG is required.' >&2; exit 1; }
+          test -n "$CNB_API_TOKEN" || { echo 'CNB_API_TOKEN is required.' >&2; exit 1; }
+
+      - name: Trigger CNB publish pipeline
         run: |
           payload="$(jq -cn \
             --arg event 'api_trigger_updater_deploy' \
-            --arg branch "$CNB_BRANCH" \
-            --arg sha "$SOURCE_SHA" \
-            '{event: $event, branch: $branch, sha: $sha, env: {SOURCE_SHA: $sha}}')"
+            --arg branch "release/$GITHUB_SHA" \
+            --arg sha "$GITHUB_SHA" \
+            '{event: $event, branch: $branch, sha: $sha, env: {
+              SOURCE_SHA: $sha,
+              WINDOWS_ASSET_NAME: "hydcraft-updater.exe",
+              MACOS_ASSET_NAME: "hydcraft-updater"
+            }}')"
           curl --fail-with-body --silent --show-error \
             --request POST \
             --url "https://api.cnb.cool/$CNB_REPOSITORY_SLUG/-/build/start" \
-            --header "Authorization: $CNB_API_TOKEN" \
+            --header "Authorization: Bearer $CNB_API_TOKEN" \
             --header 'Content-Type: application/json' \
             --data "$payload" | jq .
