@@ -92,7 +92,7 @@ const main = async () => {
 	const rcloneEnv = {
 		...process.env,
 		RCLONE_CONFIG_COS_TYPE: 's3',
-		RCLONE_CONFIG_COS_PROVIDER: 'Other',
+		RCLONE_CONFIG_COS_PROVIDER: 'TencentCOS',
 		RCLONE_CONFIG_COS_ENV_AUTH: 'false',
 		RCLONE_CONFIG_COS_ACCESS_KEY_ID: accessKeyId,
 		RCLONE_CONFIG_COS_SECRET_ACCESS_KEY: secretAccessKey,
