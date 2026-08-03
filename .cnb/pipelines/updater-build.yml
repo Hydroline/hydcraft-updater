@@ -74,6 +74,11 @@
           done
         fi
 
+main:
+  web_trigger_updater_publish:
+    - <<: *updater_windows
+    - <<: *updater_macos
+
 'release/*':
   api_trigger_updater_deploy:
     - <<: *updater_windows

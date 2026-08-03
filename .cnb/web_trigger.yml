@@ -1,8 +1,8 @@
 branch:
-  - reg: ^release/.*$
+  - reg: ^main$
     buttons:
       - name: 发布已上传的 Updater
-        description: 复用当前 release commit 的 GitHub 构建产物，上传 COS 并同步 Console
+        description: 复用当前 main commit 的 GitHub 构建产物，上传 COS 并同步 Console
         event: web_trigger_updater_publish
         groupName: Updater 发布
         isDefault: true

@@ -31,18 +31,11 @@ jobs:
 
       - name: Sync immutable release branch
         run: |
-          docker run --rm \
-            -v "$GITHUB_WORKSPACE:$GITHUB_WORKSPACE" \
-            -w "$GITHUB_WORKSPACE" \
-            -e "PLUGIN_TARGET_URL=https://cnb.cool/$CNB_REPOSITORY_SLUG.git" \
-            -e 'PLUGIN_AUTH_TYPE=https' \
-            -e 'PLUGIN_USERNAME=cnb' \
-            -e "PLUGIN_PASSWORD=$CNB_TOKEN" \
-            -e "PLUGIN_BRANCH=release/$GITHUB_SHA" \
-            -e 'PLUGIN_GIT_USER=cnb' \
-            -e 'PLUGIN_GIT_EMAIL=cnb@cnb.cool' \
-            -e 'PLUGIN_FORCE=true' \
-            tencentcom/git-sync
+          git cat-file -e "$GITHUB_SHA^{commit}"
+          cnb_auth="$(printf 'cnb:%s' "$CNB_TOKEN" | base64 --wrap=0)"
+          git -c "http.extraHeader=Authorization: Basic $cnb_auth" push --force \
+            "https://cnb.cool/$CNB_REPOSITORY_SLUG.git" \
+            "$GITHUB_SHA:refs/heads/release/$GITHUB_SHA"
 
   build:
     name: Build and upload ${{ matrix.platform }}
