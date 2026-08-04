@@ -25,7 +25,7 @@ pub async fn execute_update(
 ) {
     crate::logging::append(&state.game_dir, "START", "Update execution started");
     let clean_downloads_after_install = *state.clean_downloads_after_install.read().await;
-    let mut updated = false;
+    let mut updated_version = None;
     loop {
         match engine::apply_next(&state, selected_version.take(), source_key.clone()).await {
             Ok(engine::ApplyResult::Updated(version)) => {
@@ -34,7 +34,7 @@ pub async fn execute_update(
                     "INFO",
                     format!("Applied update to {version}"),
                 );
-                updated = true;
+                updated_version = Some(version.clone());
                 state
                     .set_status("updating", &format!("客户端正在更新至 {version}"), None)
                     .await;
@@ -54,10 +54,24 @@ pub async fn execute_update(
                     "SUCCESS",
                     "Update execution finished: up to date",
                 );
-                if updated && clean_downloads_after_install {
+                if updated_version.is_some() && clean_downloads_after_install {
                     let _ = engine::clean_downloads(&state.game_dir);
                 }
-                state.set_status("ready", "客户端已准备就绪", None).await;
+                if let Some(version) = updated_version {
+                    state
+                        .set_status_with_versions(
+                            "ready",
+                            "客户端已准备就绪",
+                            None,
+                            Some(version.clone()),
+                            Some(version),
+                        )
+                        .await;
+                } else {
+                    state
+                        .set_status("up-to-date", "客户端已是最新版本", None)
+                        .await;
+                }
                 if state.mode == "bootstrap" {
                     crate::logging::append(
                         &state.game_dir,
@@ -128,12 +142,12 @@ pub async fn initialize_updater(state: UpdaterState) {
                             ),
                         );
                         state
-                            .set_status_with_versions(
+                            .set_status_with_update(
                                 "updating",
                                 "客户端正在自动更新",
-                                None,
-                                Some(check.current_version),
-                                Some(check.to_version.clone()),
+                                check.current_version,
+                                check.to_version.clone(),
+                                check.test_revision,
                             )
                             .await;
                         spawn_update(state.clone(), Some(check.to_version), None);

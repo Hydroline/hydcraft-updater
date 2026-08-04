@@ -71,7 +71,11 @@ const {
 } = useUpdaterController()
 
 const hasAvailableUpdate = computed(() => {
-	return status.value.phase === 'awaiting-update-decision'
+	return Boolean(
+		status.value.currentVersion &&
+		status.value.targetVersion &&
+		status.value.currentVersion !== status.value.targetVersion,
+	)
 })
 </script>
 

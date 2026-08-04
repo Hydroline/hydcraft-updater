@@ -203,8 +203,8 @@ function selectSource(value: string): void {
 </script>
 
 <template>
-	<section class="flex min-h-0 flex-1 items-center justify-center p-6">
-		<div class="flex w-full max-w-lg flex-col items-center text-center">
+	<section class="flex min-h-0 flex-1 overflow-x-hidden p-6">
+		<div class="flex min-w-0 w-full max-w-lg flex-col items-center text-center">
 			<Transition name="updater-phase" mode="out-in">
 				<div
 					:key="status.phase"
@@ -238,9 +238,6 @@ function selectSource(value: string): void {
 								t('testCandidateRevision', { revision: status.testRevision })
 							}}
 						</p>
-						<p class="mt-1 text-xs text-amber-800 dark:text-amber-200">
-							{{ t('testCandidateRollbackRequired') }}
-						</p>
 					</div>
 					<p
 						v-if="
@@ -252,7 +249,7 @@ function selectSource(value: string): void {
 							].includes(status.phase) ||
 							(phaseSubtitle && status.phase !== 'awaiting-update-decision')
 						"
-						class="mt-2 text-sm text-slate-600 dark:text-slate-300"
+						class="mt-2 max-w-full overflow-hidden break-all text-sm text-slate-600 dark:text-slate-300"
 					>
 						{{
 							status.phase === 'updating'

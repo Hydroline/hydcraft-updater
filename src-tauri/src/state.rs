@@ -55,8 +55,21 @@ impl UpdaterState {
         }
     }
     pub async fn set_status(&self, phase: &str, message: &str, remaining: Option<u8>) {
-        self.set_status_with_versions(phase, message, remaining, None, None)
-            .await;
+        let (current_version, target_version, test_revision) =
+            self.preserved_update_context(phase).await;
+        self.replace_status(UpdaterStatus {
+            mode: self.mode.clone(),
+            phase: phase.into(),
+            message: message.into(),
+            failure_kind: None,
+            remaining_seconds: remaining,
+            current_version,
+            target_version,
+            test_revision,
+            download: None,
+            operation: None,
+        })
+        .await;
     }
 
     pub async fn set_status_with_versions(
@@ -67,7 +80,7 @@ impl UpdaterState {
         current_version: Option<String>,
         target_version: Option<String>,
     ) {
-        let status = UpdaterStatus {
+        self.replace_status(UpdaterStatus {
             mode: self.mode.clone(),
             phase: phase.into(),
             message: message.into(),
@@ -78,11 +91,8 @@ impl UpdaterState {
             test_revision: None,
             download: None,
             operation: None,
-        };
-        *self.status.write().await = status.clone();
-        if let Some(app) = self.app.read().await.clone() {
-            let _ = app.emit("updater-status", status);
-        }
+        })
+        .await;
     }
 
     pub async fn set_status_with_update(
@@ -93,7 +103,7 @@ impl UpdaterState {
         target_version: String,
         test_revision: Option<u32>,
     ) {
-        let status = UpdaterStatus {
+        self.replace_status(UpdaterStatus {
             mode: self.mode.clone(),
             phase: phase.into(),
             message: message.into(),
@@ -104,49 +114,44 @@ impl UpdaterState {
             test_revision,
             download: None,
             operation: None,
-        };
-        *self.status.write().await = status.clone();
-        if let Some(app) = self.app.read().await.clone() {
-            let _ = app.emit("updater-status", status);
-        }
+        })
+        .await;
     }
 
     pub async fn set_failure_status(&self, message: &str, failure_kind: &str) {
-        let status = UpdaterStatus {
+        let (current_version, target_version, test_revision) =
+            self.preserved_update_context("failed").await;
+        self.replace_status(UpdaterStatus {
             mode: self.mode.clone(),
             phase: "failed".into(),
             message: message.into(),
             failure_kind: Some(failure_kind.into()),
             remaining_seconds: None,
-            current_version: None,
-            target_version: None,
-            test_revision: None,
+            current_version,
+            target_version,
+            test_revision,
             download: None,
             operation: None,
-        };
-        *self.status.write().await = status.clone();
-        if let Some(app) = self.app.read().await.clone() {
-            let _ = app.emit("updater-status", status);
-        }
+        })
+        .await;
     }
 
     pub async fn set_download_status(&self, message: &str, download: DownloadProgress) {
-        let status = UpdaterStatus {
+        let (current_version, target_version, test_revision) =
+            self.preserved_update_context("updating").await;
+        self.replace_status(UpdaterStatus {
             mode: self.mode.clone(),
             phase: "updating".into(),
             message: message.into(),
             failure_kind: None,
             remaining_seconds: None,
-            current_version: None,
-            target_version: None,
-            test_revision: None,
+            current_version,
+            target_version,
+            test_revision,
             download: Some(download),
             operation: None,
-        };
-        *self.status.write().await = status.clone();
-        if let Some(app) = self.app.read().await.clone() {
-            let _ = app.emit("updater-status", status);
-        }
+        })
+        .await;
     }
 
     pub async fn set_operation_status(
@@ -155,22 +160,52 @@ impl UpdaterState {
         completed_items: Option<u64>,
         total_items: Option<u64>,
     ) {
-        let status = UpdaterStatus {
+        let (current_version, target_version, test_revision) =
+            self.preserved_update_context("updating").await;
+        self.replace_status(UpdaterStatus {
             mode: self.mode.clone(),
             phase: "updating".into(),
             message: stage.into(),
             failure_kind: None,
             remaining_seconds: None,
-            current_version: None,
-            target_version: None,
-            test_revision: None,
+            current_version,
+            target_version,
+            test_revision,
             download: None,
             operation: Some(OperationProgress {
                 stage: stage.into(),
                 completed_items,
                 total_items,
             }),
-        };
+        })
+        .await;
+    }
+
+    async fn preserved_update_context(
+        &self,
+        next_phase: &str,
+    ) -> (Option<String>, Option<String>, Option<u32>) {
+        if matches!(
+            next_phase,
+            "awaiting-version" | "unknown-client" | "up-to-date" | "ready"
+        ) {
+            return (None, None, None);
+        }
+        let previous = self.status.read().await;
+        if previous.current_version.is_some()
+            && previous.target_version.is_some()
+            && previous.current_version != previous.target_version
+        {
+            return (
+                previous.current_version.clone(),
+                previous.target_version.clone(),
+                previous.test_revision,
+            );
+        }
+        (None, None, None)
+    }
+
+    async fn replace_status(&self, status: UpdaterStatus) {
         *self.status.write().await = status.clone();
         if let Some(app) = self.app.read().await.clone() {
             let _ = app.emit("updater-status", status);
