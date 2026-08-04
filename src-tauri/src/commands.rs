@@ -238,12 +238,12 @@ pub async fn select_current_version(
     match engine::check_next(&state, &version).await {
         Ok(check) if check.update_available => {
             state
-                .set_status_with_versions(
+                .set_status_with_update(
                     "awaiting-update-decision",
                     "发现客户端更新",
-                    None,
-                    Some(check.current_version),
-                    Some(check.to_version),
+                    check.current_version,
+                    check.to_version,
+                    check.test_revision,
                 )
                 .await;
         }
@@ -323,12 +323,12 @@ pub async fn recheck_update(state: State<'_, UpdaterState>) -> Result<(), String
     match engine::check_next(&state, &version).await {
         Ok(check) if check.update_available => {
             state
-                .set_status_with_versions(
+                .set_status_with_update(
                     "awaiting-update-decision",
                     "发现客户端更新",
-                    None,
-                    Some(check.current_version),
-                    Some(check.to_version),
+                    check.current_version,
+                    check.to_version,
+                    check.test_revision,
                 )
                 .await
         }

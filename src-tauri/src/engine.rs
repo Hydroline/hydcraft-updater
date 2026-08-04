@@ -38,6 +38,8 @@ pub struct ClientUpdateCheck {
     pub update_available: bool,
     pub to_version: String,
     pub migration_id: Option<String>,
+    #[serde(default)]
+    pub test_revision: Option<u32>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]

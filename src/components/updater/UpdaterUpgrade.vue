@@ -229,6 +229,19 @@ function selectSource(value: string): void {
 					<h1 class="mt-4 mx-1 text-xl text-slate-950 dark:text-white">
 						{{ phaseTitle }}
 					</h1>
+					<div
+						v-if="status.testRevision != null"
+						class="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950 dark:border-amber-900/70 dark:bg-amber-950/30 dark:text-amber-100"
+					>
+						<p class="font-medium">
+							{{
+								t('testCandidateRevision', { revision: status.testRevision })
+							}}
+						</p>
+						<p class="mt-1 text-xs text-amber-800 dark:text-amber-200">
+							{{ t('testCandidateRollbackRequired') }}
+						</p>
+					</div>
 					<p
 						v-if="
 							[

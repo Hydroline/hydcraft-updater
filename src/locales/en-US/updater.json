@@ -38,6 +38,8 @@
 	"operationInProgress": "Processing. Keep this window open.",
 	"updateNow": "Update now",
 	"updateAvailable": "Update available",
+	"testCandidateRevision": "Test candidate revision r{revision}",
+	"testCandidateRollbackRequired": "Roll back the previous candidate update before validating a new test revision.",
 	"updateChangelog": "Changelog",
 	"currentDownloadSource": "Current download source is ",
 	"backToUpdateDecision": "Back",

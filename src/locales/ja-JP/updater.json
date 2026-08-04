@@ -38,6 +38,8 @@
 	"operationInProgress": "処理中です。ウィンドウを閉じないでください。",
 	"updateNow": "今すぐ更新",
 	"updateAvailable": "更新があります",
+	"testCandidateRevision": "テスト候補リビジョン r{revision}",
+	"testCandidateRollbackRequired": "新しいテストリビジョンを検証する前に、前回の候補更新をロールバックしてください。",
 	"updateChangelog": "更新履歴",
 	"currentDownloadSource": "現在のダウンロード元は",
 	"backToUpdateDecision": "戻る",

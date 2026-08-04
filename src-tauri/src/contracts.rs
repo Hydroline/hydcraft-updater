@@ -171,6 +171,8 @@ pub struct UpdaterStatus {
     pub remaining_seconds: Option<u8>,
     pub current_version: Option<String>,
     pub target_version: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub test_revision: Option<u32>,
     pub download: Option<DownloadProgress>,
     pub operation: Option<OperationProgress>,
 }

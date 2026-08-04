@@ -38,6 +38,7 @@ impl UpdaterState {
                 remaining_seconds: None,
                 current_version: None,
                 target_version: None,
+                test_revision: None,
                 download: None,
                 operation: None,
             })),
@@ -74,6 +75,33 @@ impl UpdaterState {
             remaining_seconds: remaining,
             current_version,
             target_version,
+            test_revision: None,
+            download: None,
+            operation: None,
+        };
+        *self.status.write().await = status.clone();
+        if let Some(app) = self.app.read().await.clone() {
+            let _ = app.emit("updater-status", status);
+        }
+    }
+
+    pub async fn set_status_with_update(
+        &self,
+        phase: &str,
+        message: &str,
+        current_version: String,
+        target_version: String,
+        test_revision: Option<u32>,
+    ) {
+        let status = UpdaterStatus {
+            mode: self.mode.clone(),
+            phase: phase.into(),
+            message: message.into(),
+            failure_kind: None,
+            remaining_seconds: None,
+            current_version: Some(current_version),
+            target_version: Some(target_version),
+            test_revision,
             download: None,
             operation: None,
         };
@@ -92,6 +120,7 @@ impl UpdaterState {
             remaining_seconds: None,
             current_version: None,
             target_version: None,
+            test_revision: None,
             download: None,
             operation: None,
         };
@@ -110,6 +139,7 @@ impl UpdaterState {
             remaining_seconds: None,
             current_version: None,
             target_version: None,
+            test_revision: None,
             download: Some(download),
             operation: None,
         };
@@ -133,6 +163,7 @@ impl UpdaterState {
             remaining_seconds: None,
             current_version: None,
             target_version: None,
+            test_revision: None,
             download: None,
             operation: Some(OperationProgress {
                 stage: stage.into(),

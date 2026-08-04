@@ -12,6 +12,7 @@ export interface UpdaterStatus {
 	remainingSeconds?: number
 	currentVersion?: string | null
 	targetVersion?: string | null
+	testRevision?: number | null
 	download?: DownloadProgress | null
 	operation?: OperationProgress | null
 }
