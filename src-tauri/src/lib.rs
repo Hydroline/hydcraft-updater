@@ -19,7 +19,10 @@ use commands::{
     updater_status,
 };
 use state::UpdaterState;
-use std::{env, path::PathBuf};
+use std::{
+    env,
+    path::{Path, PathBuf},
+};
 use tauri::{Manager, RunEvent, WindowEvent};
 use tauri_plugin_deep_link::DeepLinkExt;
 
@@ -32,10 +35,16 @@ pub fn run() {
         println!("{}", build_info::identity_json());
         return;
     }
-    let game_dir = argument_value(&arguments, "--game-dir")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| env::current_dir().expect("current directory"));
-    let game_dir = normalize_game_dir_path(game_dir);
+    let (game_dir, game_dir_source) = match argument_value(&arguments, "--game-dir") {
+        Some(path) => (normalize_game_dir_path(PathBuf::from(path)), "command line"),
+        None => match installed_updater_game_dir() {
+            Some(path) => (path, "installed updater path"),
+            None => (
+                normalize_game_dir_path(env::current_dir().expect("current directory")),
+                "current directory fallback",
+            ),
+        },
+    };
     let console_origin = argument_value(&arguments, "--console-origin").unwrap_or_else(|| {
         if cfg!(debug_assertions) {
             "http://localhost:3001".into()
@@ -53,6 +62,14 @@ pub fn run() {
             build_info::current().version,
             build_info::current().commit_sha,
             build_info::current().platform,
+        ),
+    );
+    logging::append(
+        &game_dir,
+        "INFO",
+        format!(
+            "Resolved game directory from {game_dir_source}: {}",
+            game_dir.display()
         ),
     );
     let state = UpdaterState::new(game_dir, console_origin, mode);
@@ -179,6 +196,40 @@ fn argument_value(arguments: &[String], name: &str) -> Option<String> {
         .position(|argument| argument == name)
         .and_then(|index| arguments.get(index + 1))
         .cloned()
+}
+
+/// Derive the Minecraft directory only for an Updater launched from the installed
+/// `.minecraft/.hydcraft/updater/<platform>/` layout. This keeps a manual
+/// double-click attached to the existing client, while development builds and
+/// copied binaries continue to use their working directory fallback.
+fn installed_updater_game_dir() -> Option<PathBuf> {
+    let executable = env::current_exe().ok()?;
+    for platform_directory in executable.ancestors() {
+        let platform = platform_directory.file_name()?.to_string_lossy();
+        if !matches!(platform.as_ref(), "windows-x86_64" | "macos-universal") {
+            continue;
+        }
+
+        let updater_directory = platform_directory.parent()?;
+        if !path_name_is(updater_directory, "updater") {
+            continue;
+        }
+        let hydcraft_directory = updater_directory.parent()?;
+        if !path_name_is(hydcraft_directory, ".hydcraft") {
+            continue;
+        }
+        let minecraft_directory = hydcraft_directory.parent()?;
+        if !path_name_is(minecraft_directory, ".minecraft") || !minecraft_directory.is_dir() {
+            continue;
+        }
+        return Some(minecraft_directory.to_path_buf());
+    }
+    None
+}
+
+fn path_name_is(path: &Path, expected: &str) -> bool {
+    path.file_name()
+        .is_some_and(|name| name.to_string_lossy().eq_ignore_ascii_case(expected))
 }
 
 fn normalize_game_dir_path(path: PathBuf) -> PathBuf {

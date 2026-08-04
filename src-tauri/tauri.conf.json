@@ -18,6 +18,7 @@
 				"height": 580,
 				"center": true,
 				"resizable": false,
+				"userAgent": "HydCraftUpdater/0.1.0",
 				"decorations": false,
 				"devtools": false
 			},
@@ -29,6 +30,7 @@
 				"height": 500,
 				"center": true,
 				"resizable": false,
+				"userAgent": "HydCraftUpdater/0.1.0",
 				"decorations": false,
 				"visible": false,
 				"devtools": false
@@ -41,6 +43,7 @@
 				"height": 500,
 				"center": true,
 				"resizable": false,
+				"userAgent": "HydCraftUpdater/0.1.0",
 				"decorations": false,
 				"visible": false,
 				"devtools": false
