@@ -7,23 +7,29 @@ permissions:
   contents: read
 
 concurrency:
-  # CNB mirrors GitHub's current source only on main. Serialize deploys so a
-  # newer sync cannot replace main between an older run's upload and trigger.
-  group: cnb-updater-deploy-main
+  # Keep the lock while the native artifacts are built and handed to CNB. The
+  # CI sync job uses the same group, so it cannot replace CNB main mid-deploy.
+  group: cnb-updater-main-sync
   cancel-in-progress: false
 
 jobs:
   sync:
-    name: Sync immutable release branch to CNB
+    name: Sync CNB main
     runs-on: ubuntu-latest
+    outputs:
+      source_sha: ${{ steps.source.outputs.sha }}
     env:
       CNB_REPOSITORY_SLUG: ${{ vars.CNB_REPOSITORY_SLUG }}
       CNB_TOKEN: ${{ secrets.CNB_TOKEN }}
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: ${{ github.sha }}
+          ref: main
           fetch-depth: 0
+
+      - name: Resolve main commit
+        id: source
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Validate CNB configuration
         run: |
@@ -32,11 +38,18 @@ jobs:
 
       - name: Sync main to CNB
         run: |
-          git cat-file -e "$GITHUB_SHA^{commit}"
-          cnb_auth="$(printf 'cnb:%s' "$CNB_TOKEN" | base64 --wrap=0)"
-          git -c "http.extraHeader=Authorization: Basic $cnb_auth" push --force \
-            "https://cnb.cool/$CNB_REPOSITORY_SLUG.git" \
-            "$GITHUB_SHA:refs/heads/main"
+          docker run --rm \
+            -v "$GITHUB_WORKSPACE:$GITHUB_WORKSPACE" \
+            -w "$GITHUB_WORKSPACE" \
+            -e "PLUGIN_TARGET_URL=https://cnb.cool/$CNB_REPOSITORY_SLUG.git" \
+            -e 'PLUGIN_AUTH_TYPE=https' \
+            -e 'PLUGIN_USERNAME=cnb' \
+            -e "PLUGIN_PASSWORD=$CNB_TOKEN" \
+            -e 'PLUGIN_BRANCH=main' \
+            -e 'PLUGIN_GIT_USER=cnb' \
+            -e 'PLUGIN_GIT_EMAIL=cnb@cnb.cool' \
+            -e 'PLUGIN_FORCE=true' \
+            tencentcom/git-sync
 
   build:
     name: Build and upload ${{ matrix.platform }}
@@ -57,10 +70,11 @@ jobs:
     env:
       CNB_REPOSITORY_SLUG: ${{ vars.CNB_REPOSITORY_SLUG }}
       CNB_TOKEN: ${{ secrets.CNB_TOKEN }}
+      HYDCRAFT_UPDATER_COMMIT: ${{ needs.sync.outputs.source_sha }}
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ needs.sync.outputs.source_sha }}
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
@@ -83,13 +97,13 @@ jobs:
         shell: bash
         run: |
           node scripts/upload-cnb-commit-asset.mjs \
-            --commit "$GITHUB_SHA" \
+            --commit "${{ needs.sync.outputs.source_sha }}" \
             --artifact "$(if [ "${{ matrix.platform }}" = "windows-x86_64" ]; then printf '%s' 'src-tauri/target/x86_64-pc-windows-msvc/release/hydcraft-updater.exe'; else printf '%s' 'src-tauri/target/universal-apple-darwin/release/hydcraft-updater'; fi)" \
             --name "${{ matrix.asset_name }}"
 
   trigger:
     name: Trigger CNB publish pipeline
-    needs: build
+    needs: [sync, build]
     runs-on: ubuntu-latest
     env:
       CNB_REPOSITORY_SLUG: ${{ vars.CNB_REPOSITORY_SLUG }}
@@ -104,7 +118,7 @@ jobs:
         run: |
           payload="$(jq -cn \
             --arg event 'api_trigger_updater_deploy' \
-            --arg sha "$GITHUB_SHA" \
+            --arg sha "${{ needs.sync.outputs.source_sha }}" \
             '{event: $event, branch: "main", env: {
               SOURCE_SHA: $sha,
               WINDOWS_ASSET_NAME: "hydcraft-updater.exe",
