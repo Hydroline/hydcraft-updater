@@ -45,6 +45,9 @@ export interface UpdaterContext {
 	mode: 'manual' | 'bootstrap'
 	gameDir: string
 	consoleOrigin: string
+	updaterVersion: string
+	updaterCommitSha: string
+	updaterPlatform: string
 }
 
 export interface ClientInspection {

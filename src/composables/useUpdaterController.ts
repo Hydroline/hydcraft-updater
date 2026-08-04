@@ -34,6 +34,9 @@ export function useUpdaterController() {
 		mode: 'manual',
 		gameDir: '',
 		consoleOrigin: '',
+		updaterVersion: '',
+		updaterCommitSha: '',
+		updaterPlatform: '',
 	})
 	const clientVersions = ref<ClientVersionOption[]>([])
 	const clientVersionsLoading = ref(false)

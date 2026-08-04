@@ -1,8 +1,10 @@
 mod auth;
+mod build_info;
 mod commands;
 mod contracts;
 mod engine;
 mod lifecycle;
+mod logging;
 mod state;
 mod windows;
 
@@ -18,11 +20,18 @@ use commands::{
 };
 use state::UpdaterState;
 use std::{env, path::PathBuf};
-use tauri::{Manager, WindowEvent};
+use tauri::{Manager, RunEvent, WindowEvent};
 use tauri_plugin_deep_link::DeepLinkExt;
 
 pub fn run() {
     let arguments = env::args().collect::<Vec<_>>();
+    if arguments
+        .iter()
+        .any(|argument| argument == "--identity-json")
+    {
+        println!("{}", build_info::identity_json());
+        return;
+    }
     let game_dir = argument_value(&arguments, "--game-dir")
         .map(PathBuf::from)
         .unwrap_or_else(|| env::current_dir().expect("current directory"));
@@ -35,6 +44,17 @@ pub fn run() {
         }
     });
     let mode = argument_value(&arguments, "--mode").unwrap_or_else(|| "manual".into());
+    let log_game_dir = game_dir.clone();
+    logging::append(
+        &game_dir,
+        "START",
+        format!(
+            "Updater started; version={}, commitSha={}, platform={}, mode={mode}, origin={console_origin}",
+            build_info::current().version,
+            build_info::current().commit_sha,
+            build_info::current().platform,
+        ),
+    );
     let state = UpdaterState::new(game_dir, console_origin, mode);
     let update_state = state.clone();
     let callback_state = state.clone();
@@ -51,13 +71,23 @@ pub fn run() {
         }));
     }
 
-    builder
+    let app = builder
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .on_window_event(|window, event| {
-            if window.label() == "main" && matches!(event, WindowEvent::CloseRequested { .. }) {
-                window.app_handle().exit(0);
+            if window.label() == "main" {
+                if let WindowEvent::CloseRequested { api, .. } = event {
+                    api.prevent_close();
+                    let state = window.app_handle().state::<UpdaterState>();
+                    let code = if state.mode == "bootstrap" { 1 } else { 0 };
+                    logging::append(
+                        &state.game_dir,
+                        "RESULT",
+                        format!("Updater window closed by user; exitCode={code}"),
+                    );
+                    window.app_handle().exit(code);
+                }
             }
         })
         .manage(state)
@@ -101,8 +131,19 @@ pub fn run() {
             hide_auth_window,
             open_external_url
         ])
-        .run(tauri::generate_context!())
-        .expect("HydCraft Updater failed to run");
+        .build(tauri::generate_context!())
+        .expect("HydCraft Updater failed to build");
+    app.run(move |_app, event| match event {
+        RunEvent::ExitRequested { code, .. } => {
+            logging::append(
+                &log_game_dir,
+                "RESULT",
+                format!("Updater exit requested; exitCode={}", code.unwrap_or(1)),
+            );
+        }
+        RunEvent::Exit => logging::append(&log_game_dir, "END", "Updater process exited"),
+        _ => {}
+    });
 }
 
 fn register_deep_link_listener(app: &tauri::App, state: UpdaterState) {

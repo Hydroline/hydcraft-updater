@@ -1,5 +1,5 @@
 use crate::{
-    engine, lifecycle,
+    build_info, engine, lifecycle,
     state::{ClientDetailsRequest, DesktopIdentity, UpdaterState},
     windows,
 };
@@ -21,6 +21,9 @@ pub struct UpdaterContext {
     pub mode: String,
     pub game_dir: String,
     pub console_origin: String,
+    pub updater_version: String,
+    pub updater_commit_sha: String,
+    pub updater_platform: String,
 }
 
 #[derive(Serialize)]
@@ -32,10 +35,14 @@ pub struct ClientInspection {
 
 #[tauri::command]
 pub async fn updater_context(state: State<'_, UpdaterState>) -> Result<UpdaterContext, String> {
+    let build = build_info::current();
     Ok(UpdaterContext {
         mode: state.mode.clone(),
         game_dir: state.game_dir.to_string_lossy().into_owned(),
         console_origin: state.console_origin.clone(),
+        updater_version: build.version.into(),
+        updater_commit_sha: build.commit_sha.into(),
+        updater_platform: build.platform.into(),
     })
 }
 
@@ -73,7 +80,16 @@ pub async fn rollback_last_update(state: State<'_, UpdaterState>) -> Result<(), 
     if state.status.read().await.phase == "updating" {
         return Err("更新正在进行，请完成更新后再回滚".into());
     }
-    engine::rollback_last_update(&state.game_dir).map_err(|error| error.to_string())?;
+    crate::logging::append(&state.game_dir, "START", "Manual rollback requested");
+    if let Err(error) = engine::rollback_last_update(&state.game_dir) {
+        crate::logging::append(
+            &state.game_dir,
+            "ERROR",
+            format!("Manual rollback failed: {error}"),
+        );
+        return Err(error.to_string());
+    }
+    crate::logging::append(&state.game_dir, "SUCCESS", "Manual rollback finished");
     state
         .set_status("checking-update", "正在检查回滚后的客户端状态", None)
         .await;
@@ -335,6 +351,15 @@ pub async fn launch_client(app: AppHandle, state: State<'_, UpdaterState>) -> Re
     if state.mode != "bootstrap" {
         return Err("BOOTSTRAP_REQUIRED".into());
     }
+    let phase = state.status.read().await.phase.clone();
+    if !matches!(phase.as_str(), "ready" | "up-to-date") {
+        return Err("UPDATER_NOT_READY".into());
+    }
+    crate::logging::append(
+        &state.game_dir,
+        "SUCCESS",
+        format!("Bootstrap launch permitted; phase={phase}"),
+    );
     app.exit(0);
     Ok(())
 }

@@ -121,6 +121,42 @@ function formatBytes(value: number): string {
 							{{ context.consoleOrigin || t('notRead') }}
 						</span>
 					</div>
+					<div class="grid gap-2 p-4 md:grid-cols-[180px_1fr] md:items-start">
+						<span
+							class="text-[15px] text-slate-700 md:pt-1.5 dark:text-slate-200 leading-[normal]"
+						>
+							{{ t('updaterVersion') }}
+						</span>
+						<span
+							class="min-w-0 w-full break-all font-mono text-sm text-slate-700 md:pt-1.5 dark:text-slate-200"
+						>
+							{{ context.updaterVersion || t('notRead') }}
+						</span>
+					</div>
+					<div class="grid gap-2 p-4 md:grid-cols-[180px_1fr] md:items-start">
+						<span
+							class="text-[15px] text-slate-700 md:pt-1.5 dark:text-slate-200 leading-[normal]"
+						>
+							{{ t('updaterCommit') }}
+						</span>
+						<span
+							class="min-w-0 w-full break-all font-mono text-sm text-slate-700 md:pt-1.5 dark:text-slate-200"
+						>
+							{{ context.updaterCommitSha || t('notRead') }}
+						</span>
+					</div>
+					<div class="grid gap-2 p-4 md:grid-cols-[180px_1fr] md:items-start">
+						<span
+							class="text-[15px] text-slate-700 md:pt-1.5 dark:text-slate-200 leading-[normal]"
+						>
+							{{ t('updaterPlatform') }}
+						</span>
+						<span
+							class="min-w-0 w-full break-all font-mono text-sm text-slate-700 md:pt-1.5 dark:text-slate-200"
+						>
+							{{ context.updaterPlatform || t('notRead') }}
+						</span>
+					</div>
 				</div>
 			</section>
 

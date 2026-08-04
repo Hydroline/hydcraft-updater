@@ -5,28 +5,57 @@ pub async fn execute_update(
     mut selected_version: Option<String>,
     source_key: Option<String>,
 ) {
+    crate::logging::append(&state.game_dir, "START", "Update execution started");
     let clean_downloads_after_install = *state.clean_downloads_after_install.read().await;
     let mut updated = false;
     loop {
         match engine::apply_next(&state, selected_version.take(), source_key.clone()).await {
             Ok(engine::ApplyResult::Updated(version)) => {
+                crate::logging::append(
+                    &state.game_dir,
+                    "INFO",
+                    format!("Applied update to {version}"),
+                );
                 updated = true;
                 state
                     .set_status("updating", &format!("客户端正在更新至 {version}"), None)
                     .await;
             }
             Ok(engine::ApplyResult::PartiallyApplied) => {
+                crate::logging::append(
+                    &state.game_dir,
+                    "ERROR",
+                    "Update stopped after a partial transaction",
+                );
                 state.set_status("partial-update", "", None).await;
                 break;
             }
             Ok(engine::ApplyResult::UpToDate) => {
+                crate::logging::append(
+                    &state.game_dir,
+                    "SUCCESS",
+                    "Update execution finished: up to date",
+                );
                 if updated && clean_downloads_after_install {
                     let _ = engine::clean_downloads(&state.game_dir);
                 }
                 state.set_status("ready", "客户端已准备就绪", None).await;
+                if state.mode == "bootstrap" {
+                    crate::logging::append(
+                        &state.game_dir,
+                        "INFO",
+                        "Bootstrap update finished; exiting updater",
+                    );
+                    state.exit_process(0).await;
+                }
                 break;
             }
             Err(EngineError::Conflicts(conflicts)) => {
+                crate::logging::append(
+                    &state.game_dir,
+                    "WARN",
+                    format!("Update paused for {} conflicts", conflicts.len()),
+                );
                 *state.conflicts.write().await = conflicts;
                 state
                     .set_status("awaiting-conflict-resolution", "发现受管文件冲突", None)
@@ -34,6 +63,11 @@ pub async fn execute_update(
                 break;
             }
             Err(error) => {
+                crate::logging::append(
+                    &state.game_dir,
+                    "ERROR",
+                    format!("Update execution failed: {error}"),
+                );
                 state
                     .set_failure_status(&format!("更新失败：{error}"), "update")
                     .await;
@@ -44,7 +78,13 @@ pub async fn execute_update(
 }
 
 pub async fn initialize_updater(state: UpdaterState) {
+    crate::logging::append(&state.game_dir, "INFO", "Updater initialization started");
     if let Err(error) = engine::recover_unfinished_transaction(&state.game_dir) {
+        crate::logging::append(
+            &state.game_dir,
+            "ERROR",
+            format!("Transaction recovery failed: {error}"),
+        );
         state
             .set_failure_status(&format!("恢复未完成更新失败：{error}"), "update")
             .await;
@@ -52,25 +92,64 @@ pub async fn initialize_updater(state: UpdaterState) {
     }
     match engine::inspect_client_version(&state.game_dir) {
         Ok(Some(version)) => {
+            crate::logging::append(
+                &state.game_dir,
+                "INFO",
+                format!("Detected current client version: {version}"),
+            );
             *state.selected_version.write().await = Some(version.clone());
             match engine::check_next(&state, &version).await {
                 Ok(check) if check.update_available => {
-                    state
-                        .set_status_with_versions(
-                            "awaiting-update-decision",
-                            "发现客户端更新",
-                            None,
-                            Some(check.current_version),
-                            Some(check.to_version),
-                        )
-                        .await
+                    if state.mode == "bootstrap" {
+                        crate::logging::append(
+                            &state.game_dir,
+                            "INFO",
+                            format!(
+                                "Bootstrap mode found update {} -> {}; starting automatically",
+                                check.current_version, check.to_version
+                            ),
+                        );
+                        state
+                            .set_status_with_versions(
+                                "updating",
+                                "客户端正在自动更新",
+                                None,
+                                Some(check.current_version),
+                                Some(check.to_version.clone()),
+                            )
+                            .await;
+                        spawn_update(state.clone(), Some(check.to_version), None);
+                    } else {
+                        state
+                            .set_status_with_versions(
+                                "awaiting-update-decision",
+                                "发现客户端更新",
+                                None,
+                                Some(check.current_version),
+                                Some(check.to_version),
+                            )
+                            .await
+                    }
                 }
                 Ok(_) => {
                     state
                         .set_status("up-to-date", "客户端已是最新版本", None)
-                        .await
+                        .await;
+                    if state.mode == "bootstrap" {
+                        crate::logging::append(
+                            &state.game_dir,
+                            "INFO",
+                            "Bootstrap client is up to date; exiting updater",
+                        );
+                        state.exit_process(0).await;
+                    }
                 }
                 Err(error) => {
+                    crate::logging::append(
+                        &state.game_dir,
+                        "ERROR",
+                        format!("Update check failed: {error}"),
+                    );
                     state
                         .set_failure_status(&format!("检查客户端更新失败：{error}"), "check")
                         .await
@@ -85,10 +164,20 @@ pub async fn initialize_updater(state: UpdaterState) {
                 state.set_status("awaiting-version", "", None).await;
             }
             Err(error) => {
+                crate::logging::append(
+                    &state.game_dir,
+                    "ERROR",
+                    format!("Version listing failed: {error}"),
+                );
                 state.set_failure_status(&error.to_string(), "check").await;
             }
         },
         Err(error) => {
+            crate::logging::append(
+                &state.game_dir,
+                "ERROR",
+                format!("Client inspection failed: {error}"),
+            );
             state
                 .set_failure_status(&format!("无法读取当前客户端版本：{error}"), "check")
                 .await;
@@ -105,8 +194,18 @@ pub fn spawn_update(
 }
 
 pub async fn execute_client_install(state: UpdaterState, version: String, mode: String) {
+    crate::logging::append(
+        &state.game_dir,
+        "START",
+        format!("Full client install started: version={version}, mode={mode}"),
+    );
     match engine::install_client_version(&state, &version, &mode).await {
         Ok(()) => {
+            crate::logging::append(
+                &state.game_dir,
+                "SUCCESS",
+                format!("Full client install finished: {version}"),
+            );
             if *state.clean_downloads_after_install.read().await {
                 let _ = engine::clean_downloads(&state.game_dir);
             }
@@ -122,6 +221,11 @@ pub async fn execute_client_install(state: UpdaterState, version: String, mode: 
                 .await;
         }
         Err(error) => {
+            crate::logging::append(
+                &state.game_dir,
+                "ERROR",
+                format!("Full client install failed: {error}"),
+            );
             state
                 .set_failure_status(&format!("客户端完整包覆盖失败：{error}"), "update")
                 .await;

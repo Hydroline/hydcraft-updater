@@ -149,6 +149,12 @@ impl UpdaterState {
     pub async fn bind_app(&self, app: AppHandle) {
         *self.app.write().await = Some(app);
     }
+
+    pub async fn exit_process(&self, code: i32) {
+        if let Some(app) = self.app.read().await.clone() {
+            app.exit(code);
+        }
+    }
 }
 
 #[derive(Clone)]

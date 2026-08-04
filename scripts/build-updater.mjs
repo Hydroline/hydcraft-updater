@@ -22,12 +22,13 @@ if (!target)
 		'Usage: node scripts/build-updater.mjs <windows-x86_64|macos-universal>',
 	)
 
-const run = (command, args) =>
+const run = (command, args, environment = {}) =>
 	new Promise((resolveProcess, rejectProcess) => {
 		// Windows package-manager shims such as pnpm.cmd must be launched through
 		// the shell; spawning the .cmd file directly returns EINVAL on GitHub-hosted
 		// Windows runners.
 		const child = spawn(command, args, {
+			env: { ...process.env, ...environment },
 			stdio: 'inherit',
 			shell: process.platform === 'win32',
 		})
@@ -40,6 +41,11 @@ const run = (command, args) =>
 	})
 
 const pnpm = process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm'
+const updaterBuildEnvironment = {
+	HYDCRAFT_UPDATER_COMMIT:
+		process.env.HYDCRAFT_UPDATER_COMMIT ?? process.env.GITHUB_SHA ?? 'local',
+	HYDCRAFT_UPDATER_PLATFORM: platform,
+}
 
 await run(pnpm, ['install', '--frozen-lockfile'])
 if (platform === 'macos-universal')
@@ -49,7 +55,11 @@ if (platform === 'macos-universal')
 		'aarch64-apple-darwin',
 		'x86_64-apple-darwin',
 	])
-await run(pnpm, ['tauri', 'build', '--target', target.target, '--no-bundle'])
+await run(
+	pnpm,
+	['tauri', 'build', '--target', target.target, '--no-bundle'],
+	updaterBuildEnvironment,
+)
 
 const artifact = resolve(target.artifact)
 await access(artifact)

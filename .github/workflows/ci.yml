@@ -72,37 +72,50 @@ jobs:
           cargo fmt --check
           cargo check
 
-  sync:
-    name: Sync CNB
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    concurrency:
-      group: cnb-updater-main-sync
-      cancel-in-progress: false
+  build-native:
+    name: Build ${{ matrix.platform }} artifact
+    needs: test
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows-x86_64
+            runner: windows-latest
+            target: x86_64-pc-windows-msvc
+            artifact_name: hydcraft-updater-windows-x86_64
+            artifact_path: src-tauri/target/x86_64-pc-windows-msvc/release/hydcraft-updater.exe
+          - platform: macos-universal
+            runner: macos-latest
+            target: universal-apple-darwin
+            artifact_name: hydcraft-updater-macos-universal
+            artifact_path: src-tauri/target/universal-apple-darwin/release/hydcraft-updater
+    runs-on: ${{ matrix.runner }}
     env:
-      CNB_REPOSITORY_SLUG: ${{ vars.CNB_REPOSITORY_SLUG }}
-      CNB_TOKEN: ${{ secrets.CNB_TOKEN }}
+      HYDCRAFT_UPDATER_COMMIT: ${{ github.sha }}
+      HYDCRAFT_UPDATER_PLATFORM: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@v6
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
         with:
-          fetch-depth: 0
+          version: 10.14.0
 
-      - name: Validate CNB configuration
-        run: |
-          test -n "$CNB_REPOSITORY_SLUG" || { echo 'CNB_REPOSITORY_SLUG is required.' >&2; exit 1; }
-          test -n "$CNB_TOKEN" || { echo 'CNB_TOKEN is required.' >&2; exit 1; }
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
 
-      - name: Sync CNB main
-        run: |
-          docker run --rm \
-            -v "$GITHUB_WORKSPACE:$GITHUB_WORKSPACE" \
-            -w "$GITHUB_WORKSPACE" \
-            -e "PLUGIN_TARGET_URL=https://cnb.cool/$CNB_REPOSITORY_SLUG.git" \
-            -e 'PLUGIN_AUTH_TYPE=https' \
-            -e 'PLUGIN_USERNAME=cnb' \
-            -e "PLUGIN_PASSWORD=$CNB_TOKEN" \
-            -e 'PLUGIN_BRANCH=main' \
-            -e 'PLUGIN_GIT_USER=cnb' \
-            -e 'PLUGIN_GIT_EMAIL=cnb@cnb.cool' \
-            -e 'PLUGIN_FORCE=true' \
-            tencentcom/git-sync
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build native updater
+        run: node scripts/build-updater.mjs ${{ matrix.platform }}
+
+      - name: Upload native artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: ${{ matrix.artifact_path }}
+          if-no-files-found: error
