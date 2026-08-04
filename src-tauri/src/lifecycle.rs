@@ -1,4 +1,22 @@
 use crate::{engine, engine::EngineError, state::UpdaterState};
+use std::time::Duration;
+
+const BOOTSTRAP_UP_TO_DATE_DISPLAY_DURATION: Duration = Duration::from_millis(1200);
+
+async fn exit_bootstrap_after_up_to_date_display(state: &UpdaterState) {
+    crate::logging::append(
+        &state.game_dir,
+        "INFO",
+        "Bootstrap client is up to date; keeping status visible for 1200ms",
+    );
+    tokio::time::sleep(BOOTSTRAP_UP_TO_DATE_DISPLAY_DURATION).await;
+    crate::logging::append(
+        &state.game_dir,
+        "SUCCESS",
+        "Bootstrap up-to-date confirmation completed; exiting updater",
+    );
+    state.exit_process(0).await;
+}
 
 pub async fn execute_update(
     state: UpdaterState,
@@ -136,12 +154,7 @@ pub async fn initialize_updater(state: UpdaterState) {
                         .set_status("up-to-date", "客户端已是最新版本", None)
                         .await;
                     if state.mode == "bootstrap" {
-                        crate::logging::append(
-                            &state.game_dir,
-                            "INFO",
-                            "Bootstrap client is up to date; exiting updater",
-                        );
-                        state.exit_process(0).await;
+                        exit_bootstrap_after_up_to_date_display(&state).await;
                     }
                 }
                 Err(error) => {
