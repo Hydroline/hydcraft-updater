@@ -7,8 +7,9 @@ permissions:
   contents: read
 
 concurrency:
-  # A source commit has one immutable pair of CNB commit attachments.
-  group: cnb-updater-deploy-${{ github.sha }}
+  # CNB mirrors GitHub's current source only on main. Serialize deploys so a
+  # newer sync cannot replace main between an older run's upload and trigger.
+  group: cnb-updater-deploy-main
   cancel-in-progress: false
 
 jobs:
@@ -29,13 +30,13 @@ jobs:
           test -n "$CNB_REPOSITORY_SLUG" || { echo 'CNB_REPOSITORY_SLUG is required.' >&2; exit 1; }
           test -n "$CNB_TOKEN" || { echo 'CNB_TOKEN is required.' >&2; exit 1; }
 
-      - name: Sync immutable release branch
+      - name: Sync main to CNB
         run: |
           git cat-file -e "$GITHUB_SHA^{commit}"
           cnb_auth="$(printf 'cnb:%s' "$CNB_TOKEN" | base64 --wrap=0)"
           git -c "http.extraHeader=Authorization: Basic $cnb_auth" push --force \
             "https://cnb.cool/$CNB_REPOSITORY_SLUG.git" \
-            "$GITHUB_SHA:refs/heads/release/$GITHUB_SHA"
+            "$GITHUB_SHA:refs/heads/main"
 
   build:
     name: Build and upload ${{ matrix.platform }}
@@ -103,9 +104,8 @@ jobs:
         run: |
           payload="$(jq -cn \
             --arg event 'api_trigger_updater_deploy' \
-            --arg branch "release/$GITHUB_SHA" \
             --arg sha "$GITHUB_SHA" \
-            '{event: $event, branch: $branch, sha: $sha, env: {
+            '{event: $event, branch: "main", env: {
               SOURCE_SHA: $sha,
               WINDOWS_ASSET_NAME: "hydcraft-updater.exe",
               MACOS_ASSET_NAME: "hydcraft-updater"

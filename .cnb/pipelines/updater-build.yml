@@ -22,6 +22,7 @@
         if [ "${CNB_EVENT:-}" != 'web_trigger_updater_publish' ]; then
           test "${CNB_COMMIT:-}" = "$SOURCE_SHA"
         fi
+        echo "UPDATER_PUBLISH_COMMIT: CNB_COMMIT=${CNB_COMMIT:-}, SOURCE_SHA=$SOURCE_SHA"
         mkdir -p artifacts
         curl --fail --location --retry 3 \
           --output "artifacts/$WINDOWS_ASSET_NAME" \
@@ -62,6 +63,7 @@
         if [ "${CNB_EVENT:-}" != 'web_trigger_updater_publish' ]; then
           test "${CNB_COMMIT:-}" = "$SOURCE_SHA"
         fi
+        echo "UPDATER_PUBLISH_COMMIT: CNB_COMMIT=${CNB_COMMIT:-}, SOURCE_SHA=$SOURCE_SHA"
         mkdir -p artifacts
         curl --fail --location --retry 3 \
           --output "artifacts/$MACOS_ASSET_NAME" \
@@ -79,11 +81,6 @@
         fi
 
 main:
-  web_trigger_updater_publish:
-    - <<: *updater_windows
-    - <<: *updater_macos
-
-'release/*':
   api_trigger_updater_deploy:
     - <<: *updater_windows
     - <<: *updater_macos
