@@ -110,6 +110,11 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Restore Rust build cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+
       - name: Build native updater
         run: node scripts/build-updater.mjs ${{ matrix.platform }}
 
