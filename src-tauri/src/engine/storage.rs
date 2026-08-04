@@ -45,7 +45,7 @@ pub(super) fn state_path(game: &Path) -> PathBuf {
 }
 
 pub(super) fn hydcraft_path(game: &Path) -> PathBuf {
-    game.join(".minecraft").join(".hydcraft")
+    game.join(".hydcraft")
 }
 
 pub(super) fn downloads_path(game: &Path) -> PathBuf {
@@ -178,8 +178,8 @@ pub(super) fn find_hash(root: &Path, expected: &str) -> Result<Vec<String>, Engi
 
 pub(super) fn save_state(game: &Path, state: &ClientState) -> Result<(), EngineError> {
     let path = state_path(game);
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|error| EngineError::Message(error.to_string()))?;
+    if !path.parent().is_some_and(Path::is_dir) {
+        return Err(EngineError::Message("客户端缺少 .minecraft 目录".into()));
     }
     fs::write(
         path,

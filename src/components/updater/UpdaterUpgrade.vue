@@ -88,10 +88,14 @@ const operationPercent = computed(() => {
 
 const operationLabel = computed(() => {
 	switch (props.status.operation?.stage) {
+		case 'checking':
+			return props.t('operationChecking')
 		case 'verifying':
 			return props.t('operationVerifying')
 		case 'extracting':
 			return props.t('operationExtracting')
+		case 'backing-up':
+			return props.t('operationBackingUp')
 		case 'applying':
 			return props.t('operationApplying')
 		default:
@@ -203,8 +207,12 @@ function selectSource(value: string): void {
 </script>
 
 <template>
-	<section class="flex min-h-0 flex-1 overflow-x-hidden p-6">
-		<div class="flex min-w-0 w-full max-w-lg flex-col items-center text-center">
+	<section
+		class="flex min-h-0 flex-1 items-center justify-center overflow-x-hidden p-6"
+	>
+		<div
+			class="my-auto flex min-w-0 w-full max-w-lg flex-col items-center text-center"
+		>
 			<Transition name="updater-phase" mode="out-in">
 				<div
 					:key="status.phase"
@@ -230,7 +238,10 @@ function selectSource(value: string): void {
 						{{ phaseTitle }}
 					</h1>
 					<div
-						v-if="status.testRevision != null"
+						v-if="
+							status.phase === 'awaiting-update-decision' &&
+							status.testRevision != null
+						"
 						class="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950 dark:border-amber-900/70 dark:bg-amber-950/30 dark:text-amber-100"
 					>
 						<p class="font-medium">
@@ -404,10 +415,17 @@ function selectSource(value: string): void {
 							<p class="mt-3 text-xs text-slate-500 dark:text-slate-400">
 								{{
 									status.operation.totalItems != null
-										? t('operationItems', {
-												completed: status.operation.completedItems ?? 0,
-												total: status.operation.totalItems,
-											})
+										? status.operation.stage === 'verifying'
+											? t('cacheVerifiedSize', {
+													completed: formatBytes(
+														status.operation.completedItems ?? 0,
+													),
+													total: formatBytes(status.operation.totalItems),
+												})
+											: t('operationItems', {
+													completed: status.operation.completedItems ?? 0,
+													total: status.operation.totalItems,
+												})
 										: t('operationInProgress')
 								}}
 							</p>
@@ -437,13 +455,28 @@ function selectSource(value: string): void {
 								:style="{ width: operationPercent + '%' }"
 							/>
 						</div>
+						<div
+							v-else
+							class="mt-2 h-2 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800"
+						>
+							<div
+								class="updater-indeterminate h-full w-2/5 rounded-full bg-primary-500"
+							/>
+						</div>
 						<p class="mt-3 text-xs text-slate-500 dark:text-slate-400">
 							{{
 								status.operation.totalItems != null
-									? t('operationItems', {
-											completed: status.operation.completedItems ?? 0,
-											total: status.operation.totalItems,
-										})
+									? status.operation.stage === 'verifying'
+										? t('cacheVerifiedSize', {
+												completed: formatBytes(
+													status.operation.completedItems ?? 0,
+												),
+												total: formatBytes(status.operation.totalItems),
+											})
+										: t('operationItems', {
+												completed: status.operation.completedItems ?? 0,
+												total: status.operation.totalItems,
+											})
 									: t('operationInProgress')
 							}}
 						</p>
@@ -694,6 +727,16 @@ function selectSource(value: string): void {
 								</UButton>
 							</p>
 							<p v-else>{{ t('hydrolineLoggedIn') }}</p>
+							<p
+								v-if="status.remainingSeconds != null"
+								class="absolute top-full mt-2 w-full text-center tabular-nums"
+							>
+								{{
+									t('automaticUpdateCountdown', {
+										seconds: status.remainingSeconds,
+									})
+								}}
+							</p>
 						</div>
 					</div>
 
@@ -742,6 +785,38 @@ function selectSource(value: string): void {
 						>
 							{{ t('launchNow') }}
 						</UButton>
+						<p
+							v-if="status.remainingSeconds != null"
+							class="absolute top-full mt-2 w-full text-center text-xs tabular-nums text-slate-500 dark:text-slate-400"
+						>
+							{{
+								t('automaticLaunchCountdown', {
+									seconds: status.remainingSeconds,
+								})
+							}}
+						</p>
+					</div>
+					<div
+						v-if="status.phase === 'up-to-date' && isBootstrap"
+						class="relative mt-6 flex w-full justify-center"
+					>
+						<UButton
+							color="primary"
+							class="min-w-36 justify-center"
+							@click="emit('launchClient')"
+						>
+							{{ t('launchNow') }}
+						</UButton>
+						<p
+							v-if="status.remainingSeconds != null"
+							class="absolute top-full mt-2 w-full text-center text-xs tabular-nums text-slate-500 dark:text-slate-400"
+						>
+							{{
+								t('automaticLaunchCountdown', {
+									seconds: status.remainingSeconds,
+								})
+							}}
+						</p>
 					</div>
 					<div v-if="status.phase === 'unknown-client'" class="mt-6">
 						<UButton
@@ -784,6 +859,19 @@ function selectSource(value: string): void {
 </template>
 
 <style scoped>
+.updater-indeterminate {
+	animation: updater-indeterminate 1.2s ease-in-out infinite;
+}
+
+@keyframes updater-indeterminate {
+	from {
+		transform: translateX(-120%);
+	}
+	to {
+		transform: translateX(300%);
+	}
+}
+
 .progress-panel-enter-active,
 .progress-panel-leave-active {
 	overflow: hidden;

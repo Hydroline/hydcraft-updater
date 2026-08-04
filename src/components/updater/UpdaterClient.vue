@@ -85,47 +85,31 @@ function canInstall(option: ClientVersionOption): boolean {
 	</section>
 	<section v-else class="flex flex-1 items-start justify-center px-6 pb-8 pt-6">
 		<div class="w-full max-w-3xl">
-			<div class="mb-3 flex flex-wrap items-center justify-between gap-3">
-				<div
-					v-if="storageInfo.rollbackAvailable"
-					class="flex min-w-0 flex-1 items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 dark:border-amber-900/70 dark:bg-amber-950/30"
-				>
-					<div class="min-w-0">
-						<p class="text-sm text-amber-900 dark:text-amber-200">
-							{{ t('rollbackAvailable') }}
-						</p>
-						<p
-							class="mt-1 truncate text-xs text-amber-800/80 dark:text-amber-300/80"
-						>
-							{{
-								t('rollbackDescription', {
-									from: storageInfo.rollbackToVersion || '',
-									to: storageInfo.rollbackFromVersion || '',
-								})
-							}}
-						</p>
-					</div>
-					<UPopover>
-						<UButton color="warning" variant="soft" icon="i-lucide-history">
-							{{ t('rollbackAction') }}
-						</UButton>
-						<template #content>
-							<div class="flex w-64 flex-col gap-3 p-3">
-								<p class="text-sm leading-5 text-slate-700 dark:text-slate-200">
-									{{ t('rollbackConfirmDescription') }}
-								</p>
-								<UButton
-									color="warning"
-									class="justify-center"
-									@click="emit('rollbackLastUpdate')"
-								>
-									{{ t('rollbackConfirm') }}
-								</UButton>
-							</div>
-						</template>
-					</UPopover>
-				</div>
-				<span v-else />
+			<div class="mb-3 flex flex-wrap items-center justify-end gap-1">
+				<UPopover v-if="storageInfo.rollbackAvailable">
+					<UButton color="warning" variant="link" icon="i-lucide-history">
+						{{ t('rollbackAction') }}
+					</UButton>
+					<template #content>
+						<div class="flex w-64 flex-col gap-3 p-3">
+							<p class="text-sm leading-5 text-slate-700 dark:text-slate-200">
+								{{
+									t('rollbackDescription', {
+										from: storageInfo.rollbackToVersion || '',
+										to: storageInfo.rollbackFromVersion || '',
+									})
+								}}
+							</p>
+							<UButton
+								color="warning"
+								class="justify-center"
+								@click="emit('rollbackLastUpdate')"
+							>
+								{{ t('rollbackAction') }}
+							</UButton>
+						</div>
+					</template>
+				</UPopover>
 				<UButton
 					color="neutral"
 					variant="link"

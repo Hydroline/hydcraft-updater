@@ -1,6 +1,11 @@
 use crate::contracts::{DownloadProgress, OperationProgress, UpdateConflict, UpdaterStatus};
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, path::PathBuf, sync::Arc, time::Instant};
+use std::{
+    collections::HashMap,
+    path::PathBuf,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 use tauri::{AppHandle, Emitter};
 use tokio::sync::{Mutex, RwLock};
 
@@ -21,6 +26,7 @@ pub struct UpdaterState {
     pub conflicts: Arc<RwLock<Vec<UpdateConflict>>>,
     pub resolutions: Arc<RwLock<HashMap<String, String>>>,
     pub client_details: Arc<RwLock<Option<ClientDetailsRequest>>>,
+    pub bootstrap_auto_countdown_deadline: Arc<RwLock<Option<Instant>>>,
 }
 
 impl UpdaterState {
@@ -52,6 +58,7 @@ impl UpdaterState {
             conflicts: Arc::new(RwLock::new(Vec::new())),
             resolutions: Arc::new(RwLock::new(HashMap::new())),
             client_details: Arc::new(RwLock::new(None)),
+            bootstrap_auto_countdown_deadline: Arc::new(RwLock::new(None)),
         }
     }
     pub async fn set_status(&self, phase: &str, message: &str, remaining: Option<u8>) {
@@ -116,6 +123,81 @@ impl UpdaterState {
             operation: None,
         })
         .await;
+    }
+
+    pub async fn set_status_with_update_countdown(
+        &self,
+        message: &str,
+        current_version: String,
+        target_version: String,
+        test_revision: Option<u32>,
+        remaining_seconds: u8,
+    ) {
+        self.replace_status(UpdaterStatus {
+            mode: self.mode.clone(),
+            phase: "awaiting-update-decision".into(),
+            message: message.into(),
+            failure_kind: None,
+            remaining_seconds: Some(remaining_seconds),
+            current_version: Some(current_version),
+            target_version: Some(target_version),
+            test_revision,
+            download: None,
+            operation: None,
+        })
+        .await;
+    }
+
+    pub async fn cancel_bootstrap_auto_countdown(&self) -> UpdaterStatus {
+        let previous = self.status.read().await.clone();
+        if self.mode != "bootstrap"
+            || !matches!(
+                previous.phase.as_str(),
+                "awaiting-update-decision" | "ready" | "up-to-date"
+            )
+            || previous.remaining_seconds.is_none()
+        {
+            return previous;
+        }
+
+        *self.bootstrap_auto_countdown_deadline.write().await = None;
+        let status = UpdaterStatus {
+            remaining_seconds: None,
+            ..previous
+        };
+        self.replace_status(status.clone()).await;
+        status
+    }
+
+    pub async fn arm_bootstrap_auto_countdown(&self, duration: Duration) -> Instant {
+        let deadline = Instant::now() + duration;
+        *self.bootstrap_auto_countdown_deadline.write().await = Some(deadline);
+        deadline
+    }
+
+    pub async fn disarm_bootstrap_auto_countdown(&self) {
+        *self.bootstrap_auto_countdown_deadline.write().await = None;
+    }
+
+    pub async fn bootstrap_auto_countdown_is_active(&self, deadline: Instant, phase: &str) -> bool {
+        self.bootstrap_auto_countdown_deadline
+            .read()
+            .await
+            .is_some_and(|armed| armed == deadline)
+            && self.status.read().await.phase == phase
+            && self.status.read().await.remaining_seconds.is_some()
+    }
+
+    pub async fn consume_bootstrap_auto_countdown(&self, deadline: Instant, phase: &str) -> bool {
+        if Instant::now() < deadline
+            || !self
+                .bootstrap_auto_countdown_is_active(deadline, phase)
+                .await
+        {
+            return false;
+        }
+        *self.bootstrap_auto_countdown_deadline.write().await = None;
+        true
     }
 
     pub async fn set_failure_status(&self, message: &str, failure_kind: &str) {

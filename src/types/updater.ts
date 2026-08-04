@@ -28,7 +28,7 @@ export interface DownloadProgress {
 }
 
 export interface OperationProgress {
-	stage: 'verifying' | 'extracting' | 'applying'
+	stage: 'checking' | 'verifying' | 'extracting' | 'backing-up' | 'applying'
 	completedItems?: number | null
 	totalItems?: number | null
 }

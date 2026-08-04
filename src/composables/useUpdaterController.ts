@@ -73,6 +73,11 @@ export function useUpdaterController() {
 	let lastNotifiedPhase = ''
 	let clientVersionsLoaded = false
 	let versionWindowOpened = false
+	let bootstrapCountdownPointer: { x: number; y: number } | undefined
+	let bootstrapCountdownKey: string | undefined
+	let bootstrapCountdownPointerEntered = false
+	let bootstrapCountdownCancelling = false
+	let lastStatusEffectKey: string | undefined
 
 	const isBootstrap = computed(() => context.value.mode === 'bootstrap')
 	const authenticated = computed(() => Boolean(identity.value))
@@ -488,20 +493,42 @@ export function useUpdaterController() {
 
 	async function applyStatus(next: UpdaterStatus): Promise<void> {
 		status.value = next
+		if (
+			next.mode !== 'bootstrap' ||
+			!['awaiting-update-decision', 'ready', 'up-to-date'].includes(
+				next.phase,
+			) ||
+			next.remainingSeconds == null
+		) {
+			bootstrapCountdownPointer = undefined
+			bootstrapCountdownKey = undefined
+			bootstrapCountdownPointerEntered = false
+		}
 		if (!['failed', 'up-to-date'].includes(next.phase)) lastNotifiedPhase = ''
-		if (next.phase === 'awaiting-version') await openVersionWindowIfAvailable()
-		if (next.phase === 'awaiting-conflict-resolution') await loadConflicts()
-		if (next.phase === 'awaiting-update-decision') {
-			await Promise.all([loadSources(), refreshClientVersions()])
-		}
-		if (next.phase === 'ready') {
-			await refreshCurrentClientVersion()
-			await refreshStorageInfo()
-		}
-		if (next.phase === 'authenticated') {
-			await refreshIdentity()
-			await loadSources()
-			await invokeDesktop<void>('recheck_update')
+
+		const statusEffectKey = [
+			next.phase,
+			next.currentVersion ?? '',
+			next.targetVersion ?? '',
+			next.testRevision ?? '',
+		].join(':')
+		if (lastStatusEffectKey !== statusEffectKey) {
+			lastStatusEffectKey = statusEffectKey
+			if (next.phase === 'awaiting-version')
+				await openVersionWindowIfAvailable()
+			if (next.phase === 'awaiting-conflict-resolution') await loadConflicts()
+			if (next.phase === 'awaiting-update-decision') {
+				await Promise.all([loadSources(), refreshClientVersions()])
+			}
+			if (next.phase === 'ready') {
+				await refreshCurrentClientVersion()
+				await refreshStorageInfo()
+			}
+			if (next.phase === 'authenticated') {
+				await refreshIdentity()
+				await loadSources()
+				await invokeDesktop<void>('recheck_update')
+			}
 		}
 		if (next.phase === 'failed' && lastNotifiedPhase !== next.phase) {
 			lastNotifiedPhase = next.phase
@@ -539,6 +566,75 @@ export function useUpdaterController() {
 			await loadConflicts()
 		if (status.value.phase === 'awaiting-update-decision') {
 			await loadSources()
+		}
+	}
+
+	function currentBootstrapCountdownKey(): string {
+		return `${status.value.phase}:${status.value.currentVersion ?? ''}:${status.value.targetVersion ?? ''}`
+	}
+
+	function armBootstrapUpdateCountdownCancellation(event: PointerEvent): void {
+		if (
+			!isBootstrap.value ||
+			!['awaiting-update-decision', 'ready', 'up-to-date'].includes(
+				status.value.phase,
+			) ||
+			status.value.remainingSeconds == null
+		) {
+			return
+		}
+
+		const countdownKey = currentBootstrapCountdownKey()
+		if (bootstrapCountdownKey !== countdownKey) {
+			bootstrapCountdownKey = countdownKey
+			bootstrapCountdownPointer = undefined
+			bootstrapCountdownPointerEntered = false
+		}
+		bootstrapCountdownPointer = { x: event.screenX, y: event.screenY }
+		bootstrapCountdownPointerEntered = true
+	}
+
+	async function cancelBootstrapUpdateCountdown(
+		event: PointerEvent,
+	): Promise<void> {
+		if (
+			!isBootstrap.value ||
+			!['awaiting-update-decision', 'ready', 'up-to-date'].includes(
+				status.value.phase,
+			) ||
+			status.value.remainingSeconds == null ||
+			bootstrapCountdownCancelling
+		) {
+			return
+		}
+
+		const countdownKey = currentBootstrapCountdownKey()
+		if (bootstrapCountdownKey !== countdownKey) {
+			bootstrapCountdownKey = countdownKey
+			bootstrapCountdownPointer = undefined
+			bootstrapCountdownPointerEntered = false
+		}
+
+		if (!bootstrapCountdownPointerEntered || !bootstrapCountdownPointer) {
+			return
+		}
+		if (event.movementX === 0 && event.movementY === 0) return
+
+		const pointer = { x: event.screenX, y: event.screenY }
+
+		const distance = Math.hypot(
+			pointer.x - bootstrapCountdownPointer.x,
+			pointer.y - bootstrapCountdownPointer.y,
+		)
+		if (distance <= 2) return
+
+		bootstrapCountdownCancelling = true
+		try {
+			await applyStatus(
+				await invokeDesktop<UpdaterStatus>('cancel_bootstrap_auto_countdown'),
+			)
+		} finally {
+			bootstrapCountdownCancelling = false
 		}
 	}
 
@@ -631,6 +727,8 @@ export function useUpdaterController() {
 		downloadsCleanupVersion,
 		backupsCleanupVersion,
 		cancelConflictResolution,
+		armBootstrapUpdateCountdownCancellation,
+		cancelBootstrapUpdateCountdown,
 		installClientVersion,
 		dragFromAside,
 		launchClient,

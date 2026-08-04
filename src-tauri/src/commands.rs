@@ -1,5 +1,7 @@
 use crate::{
-    build_info, engine, lifecycle,
+    build_info,
+    contracts::UpdaterStatus,
+    engine, lifecycle,
     state::{ClientDetailsRequest, DesktopIdentity, UpdaterState},
     windows,
 };
@@ -214,15 +216,25 @@ pub async fn cancel_conflict_resolution(
     state.conflicts.write().await.clear();
     state.resolutions.write().await.clear();
     let current_version = state.selected_version.read().await.clone();
+    let Some(current_version) = current_version else {
+        state
+            .set_status("awaiting-version", "需要确认客户端版本", None)
+            .await;
+        return Ok(state.status.read().await.clone());
+    };
     state
-        .set_status_with_versions(
-            "awaiting-update-decision",
-            "发现客户端更新",
-            None,
-            current_version,
-            None,
-        )
+        .set_status("checking-update", "正在检查客户端更新", None)
         .await;
+    match engine::check_next(&state, &current_version).await {
+        Ok(check) => {
+            lifecycle::present_update_check(state.inner().clone(), check).await;
+        }
+        Err(error) => {
+            state
+                .set_failure_status(&format!("无法重新检查客户端更新：{error}"), "check")
+                .await;
+        }
+    }
     Ok(state.status.read().await.clone())
 }
 
@@ -236,22 +248,7 @@ pub async fn select_current_version(
         .set_status("checking-update", "正在校验所选客户端版本", None)
         .await;
     match engine::check_next(&state, &version).await {
-        Ok(check) if check.update_available => {
-            state
-                .set_status_with_update(
-                    "awaiting-update-decision",
-                    "发现客户端更新",
-                    check.current_version,
-                    check.to_version,
-                    check.test_revision,
-                )
-                .await;
-        }
-        Ok(_) => {
-            state
-                .set_status("up-to-date", "客户端已是最新版本", None)
-                .await
-        }
+        Ok(check) => lifecycle::present_update_check(state.inner().clone(), check).await,
         Err(error) => {
             state
                 .set_failure_status(&format!("无法检查当前客户端版本：{error}"), "check")
@@ -276,11 +273,28 @@ pub async fn begin_update(
     state: State<'_, UpdaterState>,
 ) -> Result<(), String> {
     *state.clean_downloads_after_install.write().await = clean_downloads_after_install;
+    state.disarm_bootstrap_auto_countdown().await;
     let selected = state.selected_version.read().await.clone();
     let source = state.selected_source.read().await.clone();
     state.set_status("updating", "正在更新客户端", None).await;
     lifecycle::spawn_update(state.inner().clone(), selected, source);
     Ok(())
+}
+
+#[tauri::command]
+pub async fn cancel_bootstrap_auto_countdown(
+    state: State<'_, UpdaterState>,
+) -> Result<UpdaterStatus, String> {
+    let had_countdown = state.status.read().await.remaining_seconds.is_some();
+    let status = state.cancel_bootstrap_auto_countdown().await;
+    if had_countdown && status.remaining_seconds.is_none() {
+        crate::logging::append(
+            &state.game_dir,
+            "INFO",
+            "Bootstrap automatic action cancelled after explicit pointer movement",
+        );
+    }
+    Ok(status)
 }
 
 #[tauri::command]
@@ -321,22 +335,7 @@ pub async fn recheck_update(state: State<'_, UpdaterState>) -> Result<(), String
         .set_status("checking-update", "正在检查客户端更新", None)
         .await;
     match engine::check_next(&state, &version).await {
-        Ok(check) if check.update_available => {
-            state
-                .set_status_with_update(
-                    "awaiting-update-decision",
-                    "发现客户端更新",
-                    check.current_version,
-                    check.to_version,
-                    check.test_revision,
-                )
-                .await
-        }
-        Ok(_) => {
-            state
-                .set_status("up-to-date", "客户端已是最新版本", None)
-                .await
-        }
+        Ok(check) => lifecycle::present_update_check(state.inner().clone(), check).await,
         Err(error) => {
             state
                 .set_failure_status(&format!("更新检查失败：{error}"), "check")

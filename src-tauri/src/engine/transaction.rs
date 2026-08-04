@@ -104,7 +104,24 @@ use zip::ZipArchive;
 
 const SKIP_RESOLUTION: &str = "__hydcraft_skip__";
 
-pub(super) fn preflight_conflicts(
+fn property_assignment_prefix<'a>(line: &'a str, key: &str) -> Option<&'a str> {
+    let trimmed = line.trim_start();
+    let leading_length = line.len() - trimmed.len();
+    let after_key = trimmed.strip_prefix(key)?;
+    let before_separator_length = after_key.len() - after_key.trim_start().len();
+    let separator_start = leading_length + key.len() + before_separator_length;
+    let separator = line[separator_start..].chars().next()?;
+    if !matches!(separator, '=' | ':') {
+        return None;
+    }
+    let value_start = separator_start + separator.len_utf8();
+    let after_separator = &line[value_start..];
+    let after_separator_whitespace = after_separator.len() - after_separator.trim_start().len();
+    Some(&line[..value_start + after_separator_whitespace])
+}
+
+pub(super) async fn preflight_conflicts(
+    updater: &UpdaterState,
     game: &Path,
     plan: &UpdatePlan,
     state: &storage::ClientState,
@@ -114,16 +131,25 @@ pub(super) fn preflight_conflicts(
     anchor_mismatches: &[Anchor],
 ) -> Result<Vec<UpdateConflict>, EngineError> {
     let mut output = Vec::new();
+    let total_items = (plan.operations.len() + anchor_mismatches.len()) as u64;
+    let mut completed_items = 0_u64;
+    updater
+        .set_operation_status("checking", Some(completed_items), Some(total_items))
+        .await;
     let mut archive = ZipArchive::new(Cursor::new(bytes))
         .map_err(|error| EngineError::Message(error.to_string()))?;
     for operation in &plan.operations {
+        if resolutions.contains_key(operation.id()) {
+            completed_items += 1;
+            updater
+                .set_operation_status("checking", Some(completed_items), Some(total_items))
+                .await;
+            continue;
+        }
         if let Operation::EnsureFile {
             id, source, target, ..
         } = operation
         {
-            if resolutions.contains_key(id) {
-                continue;
-            }
             let mut payload = archive
                 .by_name(&format!("payload/{source}"))
                 .map_err(|_| EngineError::Message(format!("ZIP 缺少 payload/{source}")))?;
@@ -133,24 +159,20 @@ pub(super) fn preflight_conflicts(
                 .map_err(|error| EngineError::Message(error.to_string()))?;
             let expected = hex::encode(Sha256::digest(&content));
             let target_path = storage::safe_join(game, target)?;
-            if target_path.is_file()
-                && storage::sha256(&target_path)?.eq_ignore_ascii_case(&expected)
-            {
-                continue;
-            }
-            if target_path.is_file() {
-                if target_matches_verified_anchor(game, target, anchors)? {
-                    continue;
+            let already_current = target_path.is_file()
+                && storage::sha256(&target_path)?.eq_ignore_ascii_case(&expected);
+            if !already_current && target_path.is_file() {
+                if !target_matches_verified_anchor(game, target, anchors)? {
+                    output.push(UpdateConflict {
+                        operation_id: id.clone(),
+                        operation_type: "ensureFile".into(),
+                        target_action: "overwrite".into(),
+                        target: target.clone(),
+                        reason: "目标路径已有内容不同的文件，请确认覆盖".into(),
+                        candidates: vec![target.clone()],
+                    });
                 }
-                output.push(UpdateConflict {
-                    operation_id: id.clone(),
-                    operation_type: "ensureFile".into(),
-                    target_action: "overwrite".into(),
-                    target: target.clone(),
-                    reason: "目标路径已有内容不同的文件，请确认覆盖".into(),
-                    candidates: vec![target.clone()],
-                });
-            } else {
+            } else if !already_current {
                 let candidates = storage::find_hash(game, &expected)?;
                 if !candidates.is_empty() {
                     output.push(UpdateConflict {
@@ -171,9 +193,6 @@ pub(super) fn preflight_conflicts(
             ..
         } = operation
         {
-            if resolutions.contains_key(id) {
-                continue;
-            }
             let path = storage::safe_join(game, target)?;
             if !path.is_file() {
                 let wanted = expected_sha256.as_deref().or_else(|| {
@@ -210,9 +229,6 @@ pub(super) fn preflight_conflicts(
                     });
                 }
             }
-        }
-        if resolutions.contains_key(operation.id()) {
-            continue;
         }
         let issue = match operation {
             Operation::ReplaceText {
@@ -266,7 +282,7 @@ pub(super) fn preflight_conflicts(
                     Ok(content)
                         if content
                             .lines()
-                            .any(|line| line.trim_start().starts_with(&format!("{key}="))) =>
+                            .any(|line| property_assignment_prefix(line, key).is_some()) =>
                     {
                         None
                     }
@@ -300,6 +316,10 @@ pub(super) fn preflight_conflicts(
                 candidates: operation.target().into_iter().map(str::to_owned).collect(),
             });
         }
+        completed_items += 1;
+        updater
+            .set_operation_status("checking", Some(completed_items), Some(total_items))
+            .await;
     }
     for anchor in anchor_mismatches {
         if plan
@@ -307,20 +327,23 @@ pub(super) fn preflight_conflicts(
             .iter()
             .any(|operation| operation.target() == Some(&anchor.path))
         {
-            continue;
+        } else {
+            let operation_id = format!("verify-anchor:{}", anchor.path);
+            if !resolutions.contains_key(&operation_id) {
+                output.push(UpdateConflict {
+                    operation_id,
+                    operation_type: "verifyAnchor".into(),
+                    target_action: "confirm".into(),
+                    target: anchor.path.clone(),
+                    reason: "客户端文件与当前版本不一致，请确认是否继续处理本次迁移".into(),
+                    candidates: vec![anchor.path.clone()],
+                });
+            }
         }
-        let operation_id = format!("verify-anchor:{}", anchor.path);
-        if resolutions.contains_key(&operation_id) {
-            continue;
-        }
-        output.push(UpdateConflict {
-            operation_id,
-            operation_type: "verifyAnchor".into(),
-            target_action: "confirm".into(),
-            target: anchor.path.clone(),
-            reason: "客户端文件与当前版本不一致，请确认是否继续处理本次迁移".into(),
-            candidates: vec![anchor.path.clone()],
-        });
+        completed_items += 1;
+        updater
+            .set_operation_status("checking", Some(completed_items), Some(total_items))
+            .await;
     }
     Ok(output)
 }
@@ -342,27 +365,29 @@ fn target_matches_verified_anchor(
     Ok(false)
 }
 
-pub(super) fn apply_transaction(
+pub(super) async fn apply_transaction(
+    updater: &UpdaterState,
     game: &Path,
     plan: &UpdatePlan,
     bytes: &[u8],
     client_state: &mut storage::ClientState,
     resolutions: &HashMap<String, String>,
 ) -> Result<bool, EngineError> {
-    let tx_root = game
-        .join(".minecraft")
-        .join(".hydcraft")
-        .join("backups")
-        .join(&plan.migration_id);
+    let tx_root = storage::transaction_backup_path(game, &plan.migration_id)?;
     if tx_root.exists() {
         fs::remove_dir_all(&tx_root).map_err(|error| EngineError::Message(error.to_string()))?;
     }
     fs::create_dir_all(&tx_root).map_err(|error| EngineError::Message(error.to_string()))?;
     let previous_managed_files = client_state.managed_files.clone();
     let previous_addon_state = client_state.addon_state.clone();
+    let total_items = plan.operations.len() as u64;
+    let mut completed_items = 0_u64;
+    updater
+        .set_operation_status("backing-up", Some(completed_items), Some(total_items))
+        .await;
     client_state.unfinished_transaction = Some(plan.migration_id.clone());
     storage::save_state(game, client_state)?;
-    let result = (|| {
+    let result = async {
         let mut archive = ZipArchive::new(Cursor::new(bytes))
             .map_err(|error| EngineError::Message(error.to_string()))?;
         for operation in &plan.operations {
@@ -374,10 +399,25 @@ pub(super) fn apply_transaction(
                     backup(game, &tx_root, selected)?;
                 }
             }
+            completed_items += 1;
+            updater
+                .set_operation_status("backing-up", Some(completed_items), Some(total_items))
+                .await;
+        }
+        completed_items = 0;
+        updater
+            .set_operation_status("applying", Some(completed_items), Some(total_items))
+            .await;
+        for operation in &plan.operations {
             apply_operation(game, &mut archive, operation, client_state, resolutions)?;
+            completed_items += 1;
+            updater
+                .set_operation_status("applying", Some(completed_items), Some(total_items))
+                .await;
         }
         Ok(())
-    })();
+    }
+    .await;
     if let Err(error) = result {
         rollback(game, &tx_root)?;
         return Err(error);
@@ -420,11 +460,7 @@ pub(super) fn recover_unfinished_transaction(game: &Path) -> Result<bool, Engine
     let Some(transaction_id) = client_state.unfinished_transaction.clone() else {
         return Ok(false);
     };
-    let tx_root = game
-        .join(".minecraft")
-        .join(".hydcraft")
-        .join("backups")
-        .join(transaction_id);
+    let tx_root = storage::transaction_backup_path(game, &transaction_id)?;
     if tx_root.exists() {
         rollback(game, &tx_root)?;
         let _ = fs::remove_dir_all(&tx_root);
@@ -623,9 +659,9 @@ fn apply_operation(
             let updated = content
                 .lines()
                 .map(|line| {
-                    if line.trim_start().starts_with(&format!("{key}=")) {
+                    if let Some(prefix) = property_assignment_prefix(line, key) {
                         found = true;
-                        format!("{key}={value}")
+                        format!("{prefix}{value}")
                     } else {
                         line.to_string()
                     }
@@ -661,6 +697,36 @@ fn apply_operation(
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::property_assignment_prefix;
+
+    #[test]
+    fn recognizes_java_properties_equals_and_colon_assignments() {
+        assert_eq!(
+            property_assignment_prefix(
+                "playerTeleportCommandFormat:/tp @s {name}",
+                "playerTeleportCommandFormat"
+            ),
+            Some("playerTeleportCommandFormat:")
+        );
+        assert_eq!(
+            property_assignment_prefix(
+                "  playerTeleportCommandFormat = /tp @s {name}",
+                "playerTeleportCommandFormat"
+            ),
+            Some("  playerTeleportCommandFormat = ")
+        );
+        assert_eq!(
+            property_assignment_prefix(
+                "playerTeleportCommandFormatExtra:/tp",
+                "playerTeleportCommandFormat"
+            ),
+            None
+        );
+    }
 }
 
 fn backup(game: &Path, backup_root: &Path, target: &str) -> Result<(), EngineError> {

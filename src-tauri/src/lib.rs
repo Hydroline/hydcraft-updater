@@ -10,9 +10,9 @@ mod windows;
 
 use auth::{desktop_login_url, exchange_desktop_code, logout_desktop, start_desktop_login};
 use commands::{
-    begin_update, cancel_conflict_resolution, clean_backups, clean_downloads,
-    client_details_window_data, client_storage_info, client_version_options, desktop_identity,
-    download_sources, hide_auth_window, hide_version_window, inspect_client,
+    begin_update, cancel_bootstrap_auto_countdown, cancel_conflict_resolution, clean_backups,
+    clean_downloads, client_details_window_data, client_storage_info, client_version_options,
+    desktop_identity, download_sources, hide_auth_window, hide_version_window, inspect_client,
     install_client_version, launch_client, open_client_details_window, open_external_url,
     open_version_window, pending_conflicts, play_failure_sound, recheck_update, resolve_conflicts,
     rollback_last_update, select_current_version, select_download_source, updater_context,
@@ -137,6 +137,7 @@ pub fn run() {
             select_current_version,
             select_download_source,
             begin_update,
+            cancel_bootstrap_auto_countdown,
             cancel_conflict_resolution,
             recheck_update,
             play_failure_sound,
@@ -198,8 +199,8 @@ fn argument_value(arguments: &[String], name: &str) -> Option<String> {
         .cloned()
 }
 
-/// Derive the Minecraft directory only for an Updater launched from the installed
-/// `.minecraft/.hydcraft/updater/<platform>/` layout. This keeps a manual
+/// Derive the client root only for an Updater launched from the installed
+/// `.hydcraft/updater/<platform>/` layout. This keeps a manual
 /// double-click attached to the existing client, while development builds and
 /// copied binaries continue to use their working directory fallback.
 fn installed_updater_game_dir() -> Option<PathBuf> {
@@ -218,11 +219,11 @@ fn installed_updater_game_dir() -> Option<PathBuf> {
         if !path_name_is(hydcraft_directory, ".hydcraft") {
             continue;
         }
-        let minecraft_directory = hydcraft_directory.parent()?;
-        if !path_name_is(minecraft_directory, ".minecraft") || !minecraft_directory.is_dir() {
+        let game_directory = hydcraft_directory.parent()?;
+        if !game_directory.join(".minecraft").is_dir() {
             continue;
         }
-        return Some(minecraft_directory.to_path_buf());
+        return Some(game_directory.to_path_buf());
     }
     None
 }
@@ -235,7 +236,7 @@ fn path_name_is(path: &Path, expected: &str) -> bool {
 fn normalize_game_dir_path(path: PathBuf) -> PathBuf {
     let value = path.to_string_lossy();
     if !looks_like_windows_path(&value) {
-        return path;
+        return client_root_path(path);
     }
 
     let mut normalized = String::with_capacity(value.len());
@@ -268,7 +269,21 @@ fn normalize_game_dir_path(path: PathBuf) -> PathBuf {
         normalized.extend(std::iter::repeat_n('\\', keep));
     }
 
-    PathBuf::from(normalized)
+    client_root_path(PathBuf::from(normalized))
+}
+
+/// The updater owns paths rooted at the client directory, while Minecraft and
+/// the Java agent naturally expose the nested `.minecraft` directory. Accept
+/// either form at the process boundary so migration targets beginning with
+/// `.minecraft/` are never joined twice.
+fn client_root_path(path: PathBuf) -> PathBuf {
+    if !path_name_is(&path, ".minecraft") {
+        return path;
+    }
+    path.parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .map(Path::to_path_buf)
+        .unwrap_or(path)
 }
 
 fn looks_like_windows_path(value: &str) -> bool {

@@ -1,11 +1,14 @@
 use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 
+const UPDATER_USER_AGENT: &str = "HydCraftUpdater/0.1.0";
+
 pub fn open_version_window(app: AppHandle) -> Result<(), String> {
     let window = app
         .get_webview_window("version")
         .or_else(|| {
             WebviewWindowBuilder::new(&app, "version", WebviewUrl::App("index.html".into()))
                 .title("HydCraft 选择客户端版本")
+                .user_agent(UPDATER_USER_AGENT)
                 .inner_size(420.0, 500.0)
                 .center()
                 .resizable(false)
@@ -45,6 +48,7 @@ pub fn open_client_details_window(app: AppHandle) -> Result<(), String> {
     let window =
         WebviewWindowBuilder::new(&app, "client-details", WebviewUrl::App("index.html".into()))
             .title("HydCraft")
+            .user_agent(UPDATER_USER_AGENT)
             .inner_size(720.0, 620.0)
             .min_inner_size(520.0, 420.0)
             .center()
@@ -67,6 +71,7 @@ pub fn get_or_create_auth_window(app: &AppHandle) -> Result<WebviewWindow, Strin
     }
     WebviewWindowBuilder::new(app, "auth", WebviewUrl::App("index.html".into()))
         .title("HydCraft 账户验证")
+        .user_agent(UPDATER_USER_AGENT)
         .inner_size(420.0, 500.0)
         .center()
         .resizable(false)

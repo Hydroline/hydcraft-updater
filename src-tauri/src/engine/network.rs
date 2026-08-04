@@ -1,4 +1,4 @@
-use super::{ClientFullPackageDownload, EngineError};
+use super::{storage, ClientFullPackageDownload, EngineError};
 use crate::{
     auth,
     contracts::{DownloadProgress, MigrationEnvelope},
@@ -37,11 +37,7 @@ fn package_cache_paths(
     value: &MigrationEnvelope,
 ) -> Result<(PathBuf, PathBuf), EngineError> {
     let name = package_cache_name(value)?;
-    let directory = state
-        .game_dir
-        .join(".minecraft")
-        .join(".hydcraft")
-        .join("downloads");
+    let directory = storage::downloads_path(&state.game_dir);
     fs::create_dir_all(&directory).map_err(|error| EngineError::Message(error.to_string()))?;
     Ok((
         directory.join(format!("{name}.zip")),

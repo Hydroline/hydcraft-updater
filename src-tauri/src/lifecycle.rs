@@ -1,21 +1,162 @@
 use crate::{engine, engine::EngineError, state::UpdaterState};
 use std::time::Duration;
 
-const BOOTSTRAP_UP_TO_DATE_DISPLAY_DURATION: Duration = Duration::from_millis(1200);
+const BOOTSTRAP_AUTOMATIC_ACTION_DURATION_SECONDS: u8 = 10;
+const BOOTSTRAP_AUTOMATIC_ACTION_DURATION: Duration =
+    Duration::from_secs(BOOTSTRAP_AUTOMATIC_ACTION_DURATION_SECONDS as u64);
+const BOOTSTRAP_UP_TO_DATE_LAUNCH_DURATION_SECONDS: u8 = 3;
+const BOOTSTRAP_UP_TO_DATE_LAUNCH_DURATION: Duration =
+    Duration::from_secs(BOOTSTRAP_UP_TO_DATE_LAUNCH_DURATION_SECONDS as u64);
 
-async fn exit_bootstrap_after_up_to_date_display(state: &UpdaterState) {
-    crate::logging::append(
-        &state.game_dir,
-        "INFO",
-        "Bootstrap client is up to date; keeping status visible for 1200ms",
-    );
-    tokio::time::sleep(BOOTSTRAP_UP_TO_DATE_DISPLAY_DURATION).await;
+fn is_bootstrap_launch_phase(phase: &str) -> bool {
+    matches!(phase, "ready" | "up-to-date")
+}
+
+async fn schedule_bootstrap_launch(
+    state: UpdaterState,
+    deadline: std::time::Instant,
+    duration_seconds: u8,
+) {
+    let initial = state.status.read().await.clone();
+    if !is_bootstrap_launch_phase(&initial.phase)
+        || !state
+            .bootstrap_auto_countdown_is_active(deadline, &initial.phase)
+            .await
+    {
+        return;
+    }
+    let phase = initial.phase;
+    let message = initial.message;
+
+    for remaining_seconds in (1..duration_seconds).rev() {
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        if !state
+            .bootstrap_auto_countdown_is_active(deadline, &phase)
+            .await
+        {
+            return;
+        }
+        state
+            .set_status(&phase, &message, Some(remaining_seconds))
+            .await;
+    }
+
+    tokio::time::sleep(Duration::from_secs(1)).await;
+    if !state
+        .consume_bootstrap_auto_countdown(deadline, &phase)
+        .await
+    {
+        return;
+    }
     crate::logging::append(
         &state.game_dir,
         "SUCCESS",
-        "Bootstrap up-to-date confirmation completed; exiting updater",
+        "Bootstrap launch countdown completed; exiting updater",
     );
     state.exit_process(0).await;
+}
+
+pub async fn begin_bootstrap_launch_countdown(state: UpdaterState) {
+    let status = state.status.read().await.clone();
+    if !is_bootstrap_launch_phase(&status.phase) {
+        return;
+    }
+    let (duration_seconds, duration) = if status.phase == "up-to-date" {
+        (
+            BOOTSTRAP_UP_TO_DATE_LAUNCH_DURATION_SECONDS,
+            BOOTSTRAP_UP_TO_DATE_LAUNCH_DURATION,
+        )
+    } else {
+        (
+            BOOTSTRAP_AUTOMATIC_ACTION_DURATION_SECONDS,
+            BOOTSTRAP_AUTOMATIC_ACTION_DURATION,
+        )
+    };
+    state
+        .set_status(&status.phase, &status.message, Some(duration_seconds))
+        .await;
+    let deadline = state.arm_bootstrap_auto_countdown(duration).await;
+    tauri::async_runtime::spawn(schedule_bootstrap_launch(state, deadline, duration_seconds));
+}
+
+async fn schedule_bootstrap_update(
+    state: UpdaterState,
+    check: engine::ClientUpdateCheck,
+    deadline: std::time::Instant,
+) {
+    for remaining_seconds in (1..BOOTSTRAP_AUTOMATIC_ACTION_DURATION_SECONDS).rev() {
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        if !state
+            .bootstrap_auto_countdown_is_active(deadline, "awaiting-update-decision")
+            .await
+        {
+            return;
+        }
+        state
+            .set_status_with_update_countdown(
+                "发现客户端更新",
+                check.current_version.clone(),
+                check.to_version.clone(),
+                check.test_revision,
+                remaining_seconds,
+            )
+            .await;
+    }
+
+    tokio::time::sleep(Duration::from_secs(1)).await;
+    if !state
+        .consume_bootstrap_auto_countdown(deadline, "awaiting-update-decision")
+        .await
+    {
+        return;
+    }
+    state.set_status("updating", "正在更新客户端", None).await;
+    spawn_update(state, Some(check.to_version), None);
+}
+
+pub async fn present_update_check(state: UpdaterState, check: engine::ClientUpdateCheck) {
+    if check.update_available {
+        if state.mode == "bootstrap" {
+            crate::logging::append(
+                &state.game_dir,
+                "INFO",
+                format!(
+                    "Bootstrap mode found update {} -> {}; starting automatic countdown",
+                    check.current_version, check.to_version
+                ),
+            );
+            state
+                .set_status_with_update_countdown(
+                    "发现客户端更新",
+                    check.current_version.clone(),
+                    check.to_version.clone(),
+                    check.test_revision,
+                    BOOTSTRAP_AUTOMATIC_ACTION_DURATION_SECONDS,
+                )
+                .await;
+            let deadline = state
+                .arm_bootstrap_auto_countdown(BOOTSTRAP_AUTOMATIC_ACTION_DURATION)
+                .await;
+            tauri::async_runtime::spawn(schedule_bootstrap_update(state, check, deadline));
+        } else {
+            state
+                .set_status_with_update(
+                    "awaiting-update-decision",
+                    "发现客户端更新",
+                    check.current_version,
+                    check.to_version,
+                    check.test_revision,
+                )
+                .await;
+        }
+    } else {
+        state
+            .set_status("up-to-date", "客户端已是最新版本", None)
+            .await;
+        if state.mode == "bootstrap" {
+            begin_bootstrap_launch_countdown(state).await;
+        }
+    }
 }
 
 pub async fn execute_update(
@@ -73,12 +214,7 @@ pub async fn execute_update(
                         .await;
                 }
                 if state.mode == "bootstrap" {
-                    crate::logging::append(
-                        &state.game_dir,
-                        "INFO",
-                        "Bootstrap update finished; exiting updater",
-                    );
-                    state.exit_process(0).await;
+                    begin_bootstrap_launch_countdown(state.clone()).await;
                 }
                 break;
             }
@@ -131,46 +267,7 @@ pub async fn initialize_updater(state: UpdaterState) {
             );
             *state.selected_version.write().await = Some(version.clone());
             match engine::check_next(&state, &version).await {
-                Ok(check) if check.update_available => {
-                    if state.mode == "bootstrap" {
-                        crate::logging::append(
-                            &state.game_dir,
-                            "INFO",
-                            format!(
-                                "Bootstrap mode found update {} -> {}; starting automatically",
-                                check.current_version, check.to_version
-                            ),
-                        );
-                        state
-                            .set_status_with_update(
-                                "updating",
-                                "客户端正在自动更新",
-                                check.current_version,
-                                check.to_version.clone(),
-                                check.test_revision,
-                            )
-                            .await;
-                        spawn_update(state.clone(), Some(check.to_version), None);
-                    } else {
-                        state
-                            .set_status_with_versions(
-                                "awaiting-update-decision",
-                                "发现客户端更新",
-                                None,
-                                Some(check.current_version),
-                                Some(check.to_version),
-                            )
-                            .await
-                    }
-                }
-                Ok(_) => {
-                    state
-                        .set_status("up-to-date", "客户端已是最新版本", None)
-                        .await;
-                    if state.mode == "bootstrap" {
-                        exit_bootstrap_after_up_to_date_display(&state).await;
-                    }
-                }
+                Ok(check) => present_update_check(state.clone(), check).await,
                 Err(error) => {
                     crate::logging::append(
                         &state.game_dir,
@@ -246,6 +343,9 @@ pub async fn execute_client_install(state: UpdaterState, version: String, mode: 
                     Some(version),
                 )
                 .await;
+            if state.mode == "bootstrap" {
+                begin_bootstrap_launch_countdown(state.clone()).await;
+            }
         }
         Err(error) => {
             crate::logging::append(

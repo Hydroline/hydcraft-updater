@@ -1,9 +1,15 @@
 use super::EngineError;
-use crate::contracts::{MigrationEnvelope, UpdatePlan};
+use crate::{
+    contracts::{MigrationEnvelope, UpdatePlan},
+    state::UpdaterState,
+};
 use base64::{engine::general_purpose::STANDARD, Engine};
 use ed25519_dalek::{Signature, Verifier, VerifyingKey};
 use sha2::{Digest, Sha256};
-use std::io::{Cursor, Read};
+use std::{
+    io::{Cursor, Read},
+    time::Duration,
+};
 use zip::ZipArchive;
 
 const BUILTIN_UPDATE_PUBLIC_KEY: &str = "MWNn2GhVUuacJD8Mua0gmq4UzjTz3AUwHBELW7Iukrk=";
@@ -34,11 +40,30 @@ pub(super) fn plan_from_envelope(value: &MigrationEnvelope) -> UpdatePlan {
     plan
 }
 
-pub(super) fn verify_package(bytes: &[u8], value: &MigrationEnvelope) -> Result<(), EngineError> {
+pub(super) async fn verify_package(
+    state: &UpdaterState,
+    bytes: &[u8],
+    value: &MigrationEnvelope,
+) -> Result<(), EngineError> {
     if bytes.len().to_string() != value.package_size {
         return Err(EngineError::Message("更新 ZIP 大小校验失败".into()));
     }
-    let hash = hex::encode(Sha256::digest(bytes));
+    let total_bytes = bytes.len() as u64;
+    state
+        .set_operation_status("verifying", Some(0), Some(total_bytes))
+        .await;
+    tokio::time::sleep(Duration::from_millis(80)).await;
+    let mut hasher = Sha256::new();
+    let mut verified_bytes = 0_u64;
+    for chunk in bytes.chunks(1024 * 1024) {
+        hasher.update(chunk);
+        verified_bytes += chunk.len() as u64;
+        state
+            .set_operation_status("verifying", Some(verified_bytes), Some(total_bytes))
+            .await;
+        tokio::time::sleep(Duration::from_millis(16)).await;
+    }
+    let hash = hex::encode(hasher.finalize());
     if !hash.eq_ignore_ascii_case(&value.package_sha256) {
         return Err(EngineError::Message("更新 ZIP SHA-256 校验失败".into()));
     }

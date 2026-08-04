@@ -222,8 +222,7 @@ pub async fn apply_next(
     };
     let anchor_mismatches = storage::mismatched_anchors(&state.game_dir, anchors)?;
     let bytes = network::download_package(state, &migration).await?;
-    state.set_operation_status("verifying", None, None).await;
-    package::verify_package(&bytes, &migration)?;
+    package::verify_package(state, &bytes, &migration).await?;
     let console_plan = package::plan_from_envelope(&migration);
     // Console 迁移记录是执行计划的权威来源，ZIP 内计划只用于兼容性校验。
     if let Ok(value) = package::extract_plan(&bytes) {
@@ -239,6 +238,7 @@ pub async fn apply_next(
     let extracted = console_plan;
     let resolutions = state.resolutions.read().await.clone();
     let conflicts = transaction::preflight_conflicts(
+        state,
         &state.game_dir,
         &extracted,
         &client_state,
@@ -246,18 +246,20 @@ pub async fn apply_next(
         &bytes,
         anchors,
         &anchor_mismatches,
-    )?;
+    )
+    .await?;
     if !conflicts.is_empty() {
         return Err(EngineError::Conflicts(conflicts));
     }
-    state.set_operation_status("applying", None, None).await;
     let partially_applied = transaction::apply_transaction(
+        state,
         &state.game_dir,
         &extracted,
         &bytes,
         &mut client_state,
         &resolutions,
-    )?;
+    )
+    .await?;
     if partially_applied {
         Ok(ApplyResult::PartiallyApplied)
     } else {
