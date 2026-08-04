@@ -71,12 +71,7 @@ const {
 } = useUpdaterController()
 
 const hasAvailableUpdate = computed(() => {
-	const latestVersion = clientVersions.value.find((version) => version.isLatest)
-	return Boolean(
-		currentClientVersion.value &&
-		latestVersion &&
-		latestVersion.version !== currentClientVersion.value,
-	)
+	return status.value.phase === 'awaiting-update-decision'
 })
 </script>
 
