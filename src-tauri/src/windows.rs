@@ -1,6 +1,39 @@
 use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 
 const UPDATER_USER_AGENT: &str = "HydCraftUpdater/0.1.0";
+const WINDOW_CORNER_RADIUS: f64 = 12.0;
+
+#[cfg(target_os = "windows")]
+pub fn apply_rounded_window_region(window: &WebviewWindow) {
+    use ::windows::Win32::Graphics::Gdi::{CreateRoundRectRgn, SetWindowRgn};
+
+    let (Ok(hwnd), Ok(size), Ok(scale_factor)) =
+        (window.hwnd(), window.outer_size(), window.scale_factor())
+    else {
+        return;
+    };
+    let (width, height) = (size.width as i32, size.height as i32);
+    if width <= 0 || height <= 0 {
+        return;
+    }
+    let diameter = (WINDOW_CORNER_RADIUS * scale_factor * 2.0).round() as i32;
+    let region = unsafe { CreateRoundRectRgn(0, 0, width + 1, height + 1, diameter, diameter) };
+    if region.is_invalid() {
+        return;
+    }
+    unsafe {
+        let _ = SetWindowRgn(hwnd, Some(region), true);
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn apply_rounded_window_region(_window: &WebviewWindow) {}
+
+pub fn apply_rounded_window_regions_for_app(app: &AppHandle) {
+    for window in app.webview_windows().values() {
+        apply_rounded_window_region(window);
+    }
+}
 
 pub fn open_version_window(app: AppHandle) -> Result<(), String> {
     let window = app
@@ -13,12 +46,14 @@ pub fn open_version_window(app: AppHandle) -> Result<(), String> {
                 .center()
                 .resizable(false)
                 .decorations(false)
+                .transparent(false)
                 .devtools(false)
                 .visible(false)
                 .build()
                 .ok()
         })
         .ok_or_else(|| "无法创建版本选择窗口".to_string())?;
+    apply_rounded_window_region(&window);
     window.show().map_err(|error| error.to_string())?;
     window.set_focus().map_err(|error| error.to_string())
 }
@@ -53,10 +88,12 @@ pub fn open_client_details_window(app: AppHandle) -> Result<(), String> {
             .min_inner_size(520.0, 420.0)
             .center()
             .decorations(false)
+            .transparent(false)
             .devtools(false)
             .visible(false)
             .build()
             .map_err(|_| "CLIENT_DETAILS_WINDOW_CREATE_FAILED".to_string())?;
+    apply_rounded_window_region(&window);
     window
         .show()
         .map_err(|_| "CLIENT_DETAILS_WINDOW_SHOW_FAILED".to_string())?;
@@ -76,6 +113,7 @@ pub fn get_or_create_auth_window(app: &AppHandle) -> Result<WebviewWindow, Strin
         .center()
         .resizable(false)
         .decorations(false)
+        .transparent(false)
         .devtools(false)
         .visible(false)
         .build()

@@ -49,6 +49,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
 	beginUpdate: []
+	cancelBootstrapCountdown: []
 	cleanDownloads: []
 	cleanBackups: []
 	cancelConflictResolution: []
@@ -92,6 +93,7 @@ const emit = defineEmits<{
 				:status="props.status"
 				:t="props.t"
 				@begin-update="emit('beginUpdate')"
+				@cancel-bootstrap-countdown="emit('cancelBootstrapCountdown')"
 				@cancel-conflict-resolution="emit('cancelConflictResolution')"
 				@launch-client="emit('launchClient')"
 				@login="emit('login')"

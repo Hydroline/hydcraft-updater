@@ -53,19 +53,23 @@ html {
 	height: 100%;
 	overflow: hidden;
 	scroll-behavior: smooth;
-	background-color: var(--color-surface-0);
+	background: transparent;
 }
 
 body,
 #app {
 	height: 100%;
 	overflow: hidden;
+	background: transparent;
 }
 
 body {
 	margin: 0;
 	padding: 0;
-	background-color: inherit;
+}
+
+#app > * {
+	height: 100%;
 }
 
 *,

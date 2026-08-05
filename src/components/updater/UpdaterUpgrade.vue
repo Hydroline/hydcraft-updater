@@ -35,6 +35,7 @@ const SKIP_RESOLUTION = '__hydcraft_skip__'
 
 const emit = defineEmits<{
 	beginUpdate: []
+	cancelBootstrapCountdown: []
 	cancelConflictResolution: []
 	launchClient: []
 	login: []
@@ -736,6 +737,15 @@ function selectSource(value: string): void {
 										seconds: status.remainingSeconds,
 									})
 								}}
+								<UButton
+									color="error"
+									variant="link"
+									size="xs"
+									class="ml-1 h-auto p-0 align-baseline"
+									@click="emit('cancelBootstrapCountdown')"
+								>
+									{{ t('cancelAutomaticCountdown') }}
+								</UButton>
 							</p>
 						</div>
 					</div>
@@ -794,6 +804,15 @@ function selectSource(value: string): void {
 									seconds: status.remainingSeconds,
 								})
 							}}
+							<UButton
+								color="error"
+								variant="link"
+								size="xs"
+								class="ml-1 h-auto p-0 align-baseline"
+								@click="emit('cancelBootstrapCountdown')"
+							>
+								{{ t('cancelAutomaticCountdown') }}
+							</UButton>
 						</p>
 					</div>
 					<div
@@ -816,6 +835,15 @@ function selectSource(value: string): void {
 									seconds: status.remainingSeconds,
 								})
 							}}
+							<UButton
+								color="error"
+								variant="link"
+								size="xs"
+								class="ml-1 h-auto p-0 align-baseline"
+								@click="emit('cancelBootstrapCountdown')"
+							>
+								{{ t('cancelAutomaticCountdown') }}
+							</UButton>
 						</p>
 					</div>
 					<div v-if="status.phase === 'unknown-client'" class="mt-6">

@@ -1753,6 +1753,7 @@ dependencies = [
  "toml_edit 0.22.27",
  "url",
  "walkdir",
+ "windows",
  "zip",
 ]
 

@@ -20,6 +20,7 @@
 				"resizable": false,
 				"userAgent": "HydCraftUpdater/0.1.0",
 				"decorations": false,
+				"transparent": false,
 				"devtools": false
 			},
 			{
@@ -32,6 +33,7 @@
 				"resizable": false,
 				"userAgent": "HydCraftUpdater/0.1.0",
 				"decorations": false,
+				"transparent": false,
 				"visible": false,
 				"devtools": false
 			},
@@ -45,6 +47,7 @@
 				"resizable": false,
 				"userAgent": "HydCraftUpdater/0.1.0",
 				"decorations": false,
+				"transparent": false,
 				"visible": false,
 				"devtools": false
 			}

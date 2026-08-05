@@ -58,7 +58,8 @@ pub fn run() {
         &game_dir,
         "START",
         format!(
-            "Updater started; version={}, commitSha={}, platform={}, mode={mode}, origin={console_origin}",
+            "Updater started; pid={}, version={}, commitSha={}, platform={}, mode={mode}, origin={console_origin}",
+            std::process::id(),
             build_info::current().version,
             build_info::current().commit_sha,
             build_info::current().platform,
@@ -92,7 +93,16 @@ pub fn run() {
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        .setup(|app| {
+            windows::apply_rounded_window_regions_for_app(&app.handle());
+            Ok(())
+        })
         .on_window_event(|window, event| {
+            if matches!(event, WindowEvent::Resized(_)) {
+                if let Some(webview) = window.app_handle().get_webview_window(window.label()) {
+                    windows::apply_rounded_window_region(&webview);
+                }
+            }
             if window.label() == "main" {
                 if let WindowEvent::CloseRequested { api, .. } = event {
                     api.prevent_close();

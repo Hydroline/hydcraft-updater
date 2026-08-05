@@ -176,8 +176,7 @@ pub(super) fn safe_join(root: &Path, target: &str) -> Result<PathBuf, EngineErro
     Ok(root.join(path))
 }
 
-pub(super) fn sha256(path: &Path) -> Result<String, EngineError> {
-    let file = fs::File::open(path).map_err(|error| EngineError::Message(error.to_string()))?;
+fn sha256_file(file: fs::File) -> Result<String, EngineError> {
     let mut reader = BufReader::with_capacity(1024 * 1024, file);
     let mut buffer = [0_u8; 1024 * 1024];
     let mut hasher = Sha256::new();
@@ -191,6 +190,19 @@ pub(super) fn sha256(path: &Path) -> Result<String, EngineError> {
         hasher.update(&buffer[..read]);
     }
     Ok(hex::encode(hasher.finalize()))
+}
+
+pub(super) fn sha256(path: &Path) -> Result<String, EngineError> {
+    let file = fs::File::open(path).map_err(|error| EngineError::Message(error.to_string()))?;
+    sha256_file(file)
+}
+
+pub(super) fn sha256_if_exists(path: &Path) -> Result<Option<String>, EngineError> {
+    match fs::File::open(path) {
+        Ok(file) => sha256_file(file).map(Some),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(EngineError::Message(error.to_string())),
+    }
 }
 
 pub(super) fn hash_index_files(root: &Path) -> Vec<PathBuf> {

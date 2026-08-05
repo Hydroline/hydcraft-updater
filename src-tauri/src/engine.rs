@@ -214,6 +214,17 @@ pub async fn apply_next(
             Some(value) => value,
             None => return Ok(ApplyResult::UpToDate),
         };
+    crate::logging::append(
+        &state.game_dir,
+        "INFO",
+        format!(
+            "Preparing migration {}; {} -> {}; operations={}",
+            migration.plan.migration_id,
+            migration.from_version,
+            migration.to_version,
+            migration.plan.operations.len(),
+        ),
+    );
     package::verify_envelope(&migration)?;
     let anchors = if migration.anchors.is_empty() {
         &migration.plan.anchors
@@ -223,6 +234,15 @@ pub async fn apply_next(
     let anchor_mismatches = storage::mismatched_anchors(&state.game_dir, anchors)?;
     let bytes = network::download_package(state, &migration).await?;
     package::verify_package(state, &bytes, &migration).await?;
+    crate::logging::append(
+        &state.game_dir,
+        "INFO",
+        format!(
+            "Verified migration package {}; bytes={}",
+            migration.plan.migration_id,
+            bytes.len(),
+        ),
+    );
     let console_plan = package::plan_from_envelope(&migration);
     // Console 迁移记录是执行计划的权威来源，ZIP 内计划只用于兼容性校验。
     if let Ok(value) = package::extract_plan(&bytes) {
@@ -237,6 +257,16 @@ pub async fn apply_next(
     }
     let extracted = console_plan;
     let resolutions = state.resolutions.read().await.clone();
+    crate::logging::append(
+        &state.game_dir,
+        "INFO",
+        format!(
+            "Preflight started; operations={}, anchorMismatches={}, savedResolutions={}",
+            extracted.operations.len(),
+            anchor_mismatches.len(),
+            resolutions.len(),
+        ),
+    );
     let conflicts = transaction::preflight_conflicts(
         state,
         &state.game_dir,

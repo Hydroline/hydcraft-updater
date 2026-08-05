@@ -65,7 +65,7 @@ onBeforeUnmount(() => {
 <template>
 	<WebviewInteractionGuard>
 		<main
-			class="relative flex min-h-screen flex-col items-center justify-center bg-white p-6 text-slate-950 dark:bg-slate-950 dark:text-white"
+			class="relative flex h-full flex-col items-center justify-center overflow-hidden bg-white p-6 text-slate-950 dark:bg-slate-950 dark:text-white"
 		>
 			<AppWindowTitlebar
 				:close-label="t('close')"

@@ -11,7 +11,6 @@ import { HYDCRAFT_SCROLLBAR_OPTIONS } from './utils/scrollbar'
 
 const {
 	appName,
-	armBootstrapUpdateCountdownCancellation,
 	authenticated,
 	beginUpdate,
 	cancelBootstrapUpdateCountdown,
@@ -85,8 +84,6 @@ const hasAvailableUpdate = computed(() => {
 	<WebviewInteractionGuard>
 		<main
 			class="relative flex h-full min-h-0 overflow-hidden bg-slate-100 text-slate-900 dark:bg-slate-950 dark:text-white"
-			@pointerenter="armBootstrapUpdateCountdownCancellation"
-			@pointermove="cancelBootstrapUpdateCountdown"
 		>
 			<UpdaterSidebar
 				:app-name="appName"
@@ -159,6 +156,7 @@ const hasAvailableUpdate = computed(() => {
 							@clean-downloads="cleanDownloads"
 							@clean-backups="cleanBackups"
 							@cancel-conflict-resolution="cancelConflictResolution"
+							@cancel-bootstrap-countdown="cancelBootstrapUpdateCountdown"
 							@launch-client="launchClient"
 							@login="startLogin"
 							@open-external-url="openExternalUrl"

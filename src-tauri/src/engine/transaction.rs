@@ -382,10 +382,22 @@ async fn build_hash_index(
     let mut index = storage::HashIndex::default();
     for (index_position, path) in files.into_iter().enumerate() {
         let hash_path = path.clone();
-        let hash = tokio::task::spawn_blocking(move || storage::sha256(&hash_path))
+        let hash = tokio::task::spawn_blocking(move || storage::sha256_if_exists(&hash_path))
             .await
             .map_err(|error| EngineError::Message(error.to_string()))??;
-        index.insert(game, &path, hash);
+        if let Some(hash) = hash {
+            index.insert(game, &path, hash);
+        } else {
+            let relative_path = path.strip_prefix(game).unwrap_or(&path);
+            crate::logging::append(
+                game,
+                "WARN",
+                format!(
+                    "Preflight hash scan skipped file removed during scan: {}",
+                    relative_path.display()
+                ),
+            );
+        }
 
         let completed_files = (index_position + 1) as u64;
         if completed_files == total_files || completed_files % 16 == 0 {

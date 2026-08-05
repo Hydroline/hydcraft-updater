@@ -70,12 +70,10 @@ export function useUpdaterController() {
 	const loginBusy = ref(false)
 	let unlistenStatus: (() => void) | undefined
 	let unlistenAuth: (() => void) | undefined
+	let sourceLoadVersion = 0
 	let lastNotifiedPhase = ''
 	let clientVersionsLoaded = false
 	let versionWindowOpened = false
-	let bootstrapCountdownPointer: { x: number; y: number } | undefined
-	let bootstrapCountdownKey: string | undefined
-	let bootstrapCountdownPointerEntered = false
 	let bootstrapCountdownCancelling = false
 	let lastStatusEffectKey: string | undefined
 
@@ -207,6 +205,7 @@ export function useUpdaterController() {
 	}
 
 	async function loadSources(): Promise<void> {
+		const loadVersion = ++sourceLoadVersion
 		try {
 			const nextSources = await invokeDesktop<DownloadSource[]>(
 				'download_sources',
@@ -214,6 +213,7 @@ export function useUpdaterController() {
 					locale: locale.value,
 				},
 			)
+			if (loadVersion !== sourceLoadVersion) return
 			sources.value = nextSources
 			if (!nextSources.length) {
 				await playSystemFailureSound().catch(() => undefined)
@@ -222,7 +222,7 @@ export function useUpdaterController() {
 			const availableSources = sources.value
 				.filter((source) => source.available)
 				.sort((left, right) => left.priority - right.priority)
-			const stored = availableSources.find(
+			const stored = nextSources.find(
 				(source) => source.key === selectedSource.value,
 			)
 			const configuredDefault = availableSources.find(
@@ -235,8 +235,10 @@ export function useUpdaterController() {
 				await invokeDesktop<void>('select_download_source', {
 					sourceKey: fallback.key,
 				})
+				if (loadVersion !== sourceLoadVersion) return
 			}
 		} catch {
+			if (loadVersion !== sourceLoadVersion) return
 			sources.value = []
 			await playSystemFailureSound().catch(() => undefined)
 		}
@@ -295,6 +297,7 @@ export function useUpdaterController() {
 		try {
 			await invokeDesktop<void>('begin_update', {
 				cleanDownloadsAfterInstall: cleanDownloadsAfterInstall.value,
+				sourceKey: selectedSource.value || null,
 			})
 		} catch (error) {
 			await nativeError(t('beginUpdateFailed', { error: String(error) }))
@@ -493,17 +496,6 @@ export function useUpdaterController() {
 
 	async function applyStatus(next: UpdaterStatus): Promise<void> {
 		status.value = next
-		if (
-			next.mode !== 'bootstrap' ||
-			!['awaiting-update-decision', 'ready', 'up-to-date'].includes(
-				next.phase,
-			) ||
-			next.remainingSeconds == null
-		) {
-			bootstrapCountdownPointer = undefined
-			bootstrapCountdownKey = undefined
-			bootstrapCountdownPointerEntered = false
-		}
 		if (!['failed', 'up-to-date'].includes(next.phase)) lastNotifiedPhase = ''
 
 		const statusEffectKey = [
@@ -569,34 +561,7 @@ export function useUpdaterController() {
 		}
 	}
 
-	function currentBootstrapCountdownKey(): string {
-		return `${status.value.phase}:${status.value.currentVersion ?? ''}:${status.value.targetVersion ?? ''}`
-	}
-
-	function armBootstrapUpdateCountdownCancellation(event: PointerEvent): void {
-		if (
-			!isBootstrap.value ||
-			!['awaiting-update-decision', 'ready', 'up-to-date'].includes(
-				status.value.phase,
-			) ||
-			status.value.remainingSeconds == null
-		) {
-			return
-		}
-
-		const countdownKey = currentBootstrapCountdownKey()
-		if (bootstrapCountdownKey !== countdownKey) {
-			bootstrapCountdownKey = countdownKey
-			bootstrapCountdownPointer = undefined
-			bootstrapCountdownPointerEntered = false
-		}
-		bootstrapCountdownPointer = { x: event.screenX, y: event.screenY }
-		bootstrapCountdownPointerEntered = true
-	}
-
-	async function cancelBootstrapUpdateCountdown(
-		event: PointerEvent,
-	): Promise<void> {
+	async function cancelBootstrapUpdateCountdown(): Promise<void> {
 		if (
 			!isBootstrap.value ||
 			!['awaiting-update-decision', 'ready', 'up-to-date'].includes(
@@ -608,26 +573,6 @@ export function useUpdaterController() {
 			return
 		}
 
-		const countdownKey = currentBootstrapCountdownKey()
-		if (bootstrapCountdownKey !== countdownKey) {
-			bootstrapCountdownKey = countdownKey
-			bootstrapCountdownPointer = undefined
-			bootstrapCountdownPointerEntered = false
-		}
-
-		if (!bootstrapCountdownPointerEntered || !bootstrapCountdownPointer) {
-			return
-		}
-		if (event.movementX === 0 && event.movementY === 0) return
-
-		const pointer = { x: event.screenX, y: event.screenY }
-
-		const distance = Math.hypot(
-			pointer.x - bootstrapCountdownPointer.x,
-			pointer.y - bootstrapCountdownPointer.y,
-		)
-		if (distance <= 2) return
-
 		bootstrapCountdownCancelling = true
 		try {
 			await applyStatus(
@@ -638,11 +583,20 @@ export function useUpdaterController() {
 		}
 	}
 
-	function selectSource(key: string | undefined): void {
+	async function selectSource(key: string | undefined): Promise<void> {
 		if (!key) return
+		const previous = selectedSource.value
 		selectedSource.value = key
-		localStorage.setItem(SOURCE_KEY, key)
-		void invokeDesktop<void>('select_download_source', { sourceKey: key })
+		sourceLoadVersion += 1
+		try {
+			await invokeDesktop<void>('select_download_source', { sourceKey: key })
+			localStorage.setItem(SOURCE_KEY, key)
+		} catch (error) {
+			selectedSource.value = previous
+			await nativeError(
+				t('selectDownloadSourceFailed', { error: String(error) }),
+			)
+		}
 	}
 
 	async function dragFromAside(event: MouseEvent): Promise<void> {
@@ -727,7 +681,6 @@ export function useUpdaterController() {
 		downloadsCleanupVersion,
 		backupsCleanupVersion,
 		cancelConflictResolution,
-		armBootstrapUpdateCountdownCancellation,
 		cancelBootstrapUpdateCountdown,
 		installClientVersion,
 		dragFromAside,

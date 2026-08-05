@@ -164,7 +164,26 @@ pub async fn execute_update(
     mut selected_version: Option<String>,
     source_key: Option<String>,
 ) {
-    crate::logging::append(&state.game_dir, "START", "Update execution started");
+    let initial_status = state.status.read().await;
+    crate::logging::append(
+        &state.game_dir,
+        "START",
+        format!(
+            "Update execution started; pid={}, mode={}, currentVersion={}, targetVersion={}, requestedSourceKey={}",
+            std::process::id(),
+            state.mode,
+            initial_status
+                .current_version
+                .as_deref()
+                .unwrap_or("unknown"),
+            initial_status
+                .target_version
+                .as_deref()
+                .unwrap_or("unknown"),
+            source_key.as_deref().unwrap_or("default"),
+        ),
+    );
+    drop(initial_status);
     let clean_downloads_after_install = *state.clean_downloads_after_install.read().await;
     let mut updated_version = None;
     loop {
@@ -231,11 +250,28 @@ pub async fn execute_update(
                 break;
             }
             Err(error) => {
+                let status = state.status.read().await;
+                let operation = status.operation.as_ref();
                 crate::logging::append(
                     &state.game_dir,
                     "ERROR",
-                    format!("Update execution failed: {error}"),
+                    format!(
+                        "Update execution failed; pid={}, mode={}, phase={}, stage={}, completed={}, total={}: {error}",
+                        std::process::id(),
+                        state.mode,
+                        status.phase,
+                        operation.map(|value| value.stage.as_str()).unwrap_or("none"),
+                        operation
+                            .and_then(|value| value.completed_items)
+                            .map(|value| value.to_string())
+                            .unwrap_or_else(|| "unknown".into()),
+                        operation
+                            .and_then(|value| value.total_items)
+                            .map(|value| value.to_string())
+                            .unwrap_or_else(|| "unknown".into()),
+                    ),
                 );
+                drop(status);
                 state
                     .set_failure_status(&format!("更新失败：{error}"), "update")
                     .await;

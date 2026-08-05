@@ -75,7 +75,7 @@ onMounted(async () => {
 <template>
 	<WebviewInteractionGuard>
 		<main
-			class="flex h-full min-h-0 flex-col bg-slate-100 text-slate-900 dark:bg-slate-950 dark:text-white"
+			class="flex h-full min-h-0 flex-col overflow-hidden bg-slate-100 text-slate-900 dark:bg-slate-950 dark:text-white"
 		>
 			<AppWindowTitlebar
 				inline

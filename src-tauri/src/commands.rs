@@ -270,9 +270,13 @@ pub async fn select_download_source(
 #[tauri::command]
 pub async fn begin_update(
     clean_downloads_after_install: bool,
+    source_key: Option<String>,
     state: State<'_, UpdaterState>,
 ) -> Result<(), String> {
     *state.clean_downloads_after_install.write().await = clean_downloads_after_install;
+    if let Some(source_key) = source_key.filter(|value| !value.trim().is_empty()) {
+        *state.selected_source.write().await = Some(source_key);
+    }
     state.disarm_bootstrap_auto_countdown().await;
     let selected = state.selected_version.read().await.clone();
     let source = state.selected_source.read().await.clone();
