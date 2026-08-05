@@ -5,9 +5,36 @@ use sha2::{Digest, Sha256};
 use std::{
     collections::HashMap,
     fs,
+    io::{BufReader, Read},
     path::{Component, Path, PathBuf},
 };
 use walkdir::WalkDir;
+
+#[derive(Default)]
+pub(super) struct HashIndex {
+    paths_by_hash: HashMap<String, Vec<String>>,
+}
+
+impl HashIndex {
+    pub(super) fn insert(&mut self, root: &Path, path: &Path, hash: String) {
+        let relative_path = path
+            .strip_prefix(root)
+            .unwrap_or(path)
+            .to_string_lossy()
+            .replace('\\', "/");
+        self.paths_by_hash
+            .entry(hash)
+            .or_default()
+            .push(relative_path);
+    }
+
+    pub(super) fn find(&self, expected: &str) -> Vec<String> {
+        self.paths_by_hash
+            .get(&expected.to_ascii_lowercase())
+            .cloned()
+            .unwrap_or_default()
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
@@ -150,30 +177,31 @@ pub(super) fn safe_join(root: &Path, target: &str) -> Result<PathBuf, EngineErro
 }
 
 pub(super) fn sha256(path: &Path) -> Result<String, EngineError> {
-    Ok(hex::encode(Sha256::digest(fs::read(path).map_err(
-        |error| EngineError::Message(error.to_string()),
-    )?)))
+    let file = fs::File::open(path).map_err(|error| EngineError::Message(error.to_string()))?;
+    let mut reader = BufReader::with_capacity(1024 * 1024, file);
+    let mut buffer = [0_u8; 1024 * 1024];
+    let mut hasher = Sha256::new();
+    loop {
+        let read = reader
+            .read(&mut buffer)
+            .map_err(|error| EngineError::Message(error.to_string()))?;
+        if read == 0 {
+            break;
+        }
+        hasher.update(&buffer[..read]);
+    }
+    Ok(hex::encode(hasher.finalize()))
 }
 
-pub(super) fn find_hash(root: &Path, expected: &str) -> Result<Vec<String>, EngineError> {
-    let mut output = Vec::new();
-    for entry in WalkDir::new(root)
+pub(super) fn hash_index_files(root: &Path) -> Vec<PathBuf> {
+    let internal_root = hydcraft_path(root);
+    WalkDir::new(root)
         .into_iter()
+        .filter_entry(|entry| entry.path() != internal_root)
         .filter_map(Result::ok)
         .filter(|entry| entry.file_type().is_file())
-    {
-        if sha256(entry.path())?.eq_ignore_ascii_case(expected) {
-            output.push(
-                entry
-                    .path()
-                    .strip_prefix(root)
-                    .unwrap_or(entry.path())
-                    .to_string_lossy()
-                    .replace('\\', "/"),
-            );
-        }
-    }
-    Ok(output)
+        .map(|entry| entry.into_path())
+        .collect()
 }
 
 pub(super) fn save_state(game: &Path, state: &ClientState) -> Result<(), EngineError> {

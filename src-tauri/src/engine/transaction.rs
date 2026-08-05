@@ -138,6 +138,7 @@ pub(super) async fn preflight_conflicts(
         .await;
     let mut archive = ZipArchive::new(Cursor::new(bytes))
         .map_err(|error| EngineError::Message(error.to_string()))?;
+    let mut hash_index = None;
     for operation in &plan.operations {
         if resolutions.contains_key(operation.id()) {
             completed_items += 1;
@@ -150,14 +151,16 @@ pub(super) async fn preflight_conflicts(
             id, source, target, ..
         } = operation
         {
-            let mut payload = archive
-                .by_name(&format!("payload/{source}"))
-                .map_err(|_| EngineError::Message(format!("ZIP 缺少 payload/{source}")))?;
-            let mut content = Vec::new();
-            payload
-                .read_to_end(&mut content)
-                .map_err(|error| EngineError::Message(error.to_string()))?;
-            let expected = hex::encode(Sha256::digest(&content));
+            let expected = {
+                let mut payload = archive
+                    .by_name(&format!("payload/{source}"))
+                    .map_err(|_| EngineError::Message(format!("ZIP 缺少 payload/{source}")))?;
+                let mut content = Vec::new();
+                payload
+                    .read_to_end(&mut content)
+                    .map_err(|error| EngineError::Message(error.to_string()))?;
+                hex::encode(Sha256::digest(&content))
+            };
             let target_path = storage::safe_join(game, target)?;
             let already_current = target_path.is_file()
                 && storage::sha256(&target_path)?.eq_ignore_ascii_case(&expected);
@@ -173,7 +176,8 @@ pub(super) async fn preflight_conflicts(
                     });
                 }
             } else if !already_current {
-                let candidates = storage::find_hash(game, &expected)?;
+                let candidates =
+                    find_hash_candidates(updater, game, &mut hash_index, &expected).await?;
                 if !candidates.is_empty() {
                     output.push(UpdateConflict {
                         operation_id: id.clone(),
@@ -201,10 +205,12 @@ pub(super) async fn preflight_conflicts(
                         .get(id)
                         .map(|value| value.sha256.as_str())
                 });
-                let candidates = wanted
-                    .map(|hash| storage::find_hash(game, hash))
-                    .transpose()?
-                    .unwrap_or_default();
+                let candidates = match wanted {
+                    Some(hash) => {
+                        find_hash_candidates(updater, game, &mut hash_index, hash).await?
+                    }
+                    None => Vec::new(),
+                };
                 output.push(UpdateConflict {
                     operation_id: id.clone(),
                     operation_type: "removeFile".into(),
@@ -346,6 +352,49 @@ pub(super) async fn preflight_conflicts(
             .await;
     }
     Ok(output)
+}
+
+async fn find_hash_candidates(
+    updater: &UpdaterState,
+    game: &Path,
+    hash_index: &mut Option<storage::HashIndex>,
+    expected: &str,
+) -> Result<Vec<String>, EngineError> {
+    if hash_index.is_none() {
+        *hash_index = Some(build_hash_index(updater, game).await?);
+    }
+    Ok(hash_index
+        .as_ref()
+        .expect("hash index is initialized")
+        .find(expected))
+}
+
+async fn build_hash_index(
+    updater: &UpdaterState,
+    game: &Path,
+) -> Result<storage::HashIndex, EngineError> {
+    let files = storage::hash_index_files(game);
+    let total_files = files.len() as u64;
+    updater
+        .set_operation_status("checking", Some(0), Some(total_files))
+        .await;
+
+    let mut index = storage::HashIndex::default();
+    for (index_position, path) in files.into_iter().enumerate() {
+        let hash_path = path.clone();
+        let hash = tokio::task::spawn_blocking(move || storage::sha256(&hash_path))
+            .await
+            .map_err(|error| EngineError::Message(error.to_string()))??;
+        index.insert(game, &path, hash);
+
+        let completed_files = (index_position + 1) as u64;
+        if completed_files == total_files || completed_files % 16 == 0 {
+            updater
+                .set_operation_status("checking", Some(completed_files), Some(total_files))
+                .await;
+        }
+    }
+    Ok(index)
 }
 
 fn target_matches_verified_anchor(

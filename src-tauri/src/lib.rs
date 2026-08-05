@@ -109,7 +109,10 @@ pub fn run() {
         })
         .manage(state)
         .setup(move |app| {
-            #[cfg(any(target_os = "linux", all(debug_assertions, windows)))]
+            // Bootstrap distributes a portable Windows executable rather than an
+            // installer. Register on every Windows start so a clean machine can
+            // hand the browser's hydcraft-updater:// callback back to this binary.
+            #[cfg(any(target_os = "linux", target_os = "windows"))]
             app.deep_link().register_all()?;
 
             register_deep_link_listener(app, callback_state.clone());
