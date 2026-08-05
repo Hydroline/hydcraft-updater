@@ -1,28 +1,27 @@
 use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 
 const UPDATER_USER_AGENT: &str = "HydCraftUpdater/0.1.0";
-const WINDOW_CORNER_RADIUS: f64 = 12.0;
 
 #[cfg(target_os = "windows")]
 pub fn apply_rounded_window_region(window: &WebviewWindow) {
-    use ::windows::Win32::Graphics::Gdi::{CreateRoundRectRgn, SetWindowRgn};
-
-    let (Ok(hwnd), Ok(size), Ok(scale_factor)) =
-        (window.hwnd(), window.outer_size(), window.scale_factor())
-    else {
-        return;
+    use ::windows::Win32::Graphics::Dwm::{
+        DwmSetWindowAttribute, DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_ROUND,
     };
-    let (width, height) = (size.width as i32, size.height as i32);
-    if width <= 0 || height <= 0 {
-        return;
-    }
-    let diameter = (WINDOW_CORNER_RADIUS * scale_factor * 2.0).round() as i32;
-    let region = unsafe { CreateRoundRectRgn(0, 0, width + 1, height + 1, diameter, diameter) };
-    if region.is_invalid() {
-        return;
-    }
-    unsafe {
-        let _ = SetWindowRgn(hwnd, Some(region), true);
+
+    if let Ok(hwnd) = window.hwnd() {
+        let preference = DWMWCP_ROUND;
+        // Let DWM round the native window instead of clipping it with a
+        // manually sized region. Borderless Windows windows include an
+        // invisible resize frame that makes outer_size() unsuitable for
+        // SetWindowRgn and exposes the window's white background.
+        unsafe {
+            let _ = DwmSetWindowAttribute(
+                hwnd,
+                DWMWA_WINDOW_CORNER_PREFERENCE,
+                &preference as *const _ as *const _,
+                size_of_val(&preference) as u32,
+            );
+        }
     }
 }
 
